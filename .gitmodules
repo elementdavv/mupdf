@@ -27,7 +27,7 @@
 	url = https://github.com/artifexsoftware/thirdparty-zlib.git
 [submodule "thirdparty/curl"]
 	path = thirdparty/curl
-	url = https://github.com/artifexsoftware/thirdparty-curl.git
+	url = git@github.com:elementdavv/thirdparty-curl.git
 [submodule "thirdparty/freeglut"]
 	path = thirdparty/freeglut
 	url = https://github.com/artifexsoftware/thirdparty-freeglut.git
@@ -36,7 +36,7 @@
 	url = https://github.com/artifexsoftware/thirdparty-tesseract.git
 [submodule "thirdparty/leptonica"]
 	path = thirdparty/leptonica
-	url = https://github.com/artifexsoftware/thirdparty-leptonica.git
+	url = git@github.com:elementdavv/thirdparty-leptonica.git
 [submodule "thirdparty/extract"]
 	path = thirdparty/extract
 	url = https://github.com/artifexsoftware/extract.git
