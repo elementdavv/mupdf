@@ -1,3 +1,15 @@
+EDITS:
+
+2025/6/23
+add zip package support
+html documents add table colspan/rowspan, border-collapse and nested table support
+office documents add image and table support in which image rotation, table colspan/rowspan, border-collapse and nested tables available
+fix txt mimetype error
+
+2024/10/19
+add bbox support for all documents
+
+
 ABOUT
 
 MuPDF is a lightweight open source software framework for viewing and converting
