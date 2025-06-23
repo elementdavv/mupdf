@@ -243,7 +243,7 @@ static const char *txt_extensions[] =
 
 static const char *txt_mimetypes[] =
 {
-	"text.plain",
+	"text/plain",
 	NULL
 };
 

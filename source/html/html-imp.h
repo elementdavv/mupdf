@@ -130,6 +130,7 @@ enum
 	PRO_BORDER_BOTTOM_COLOR,
 	PRO_BORDER_BOTTOM_STYLE,
 	PRO_BORDER_BOTTOM_WIDTH,
+	PRO_BORDER_COLLAPSE,
 	PRO_BORDER_LEFT_COLOR,
 	PRO_BORDER_LEFT_STYLE,
 	PRO_BORDER_LEFT_WIDTH,
@@ -241,6 +242,11 @@ enum {
 	/* We do not support 'anywhere'. */
 };
 
+enum {
+	BORDER_COLLAPSE_SEPARATE = 0,
+	BORDER_COLLAPSE_COLLAPSE = 1
+};
+
 enum { N_NUMBER='u', N_LENGTH='p', N_SCALE='m', N_PERCENT='%', N_AUTO='a', N_UNDEFINED='x' };
 
 struct fz_css_number_s
@@ -277,6 +283,7 @@ struct fz_css_style_s
 	unsigned int small_caps : 1;
 	unsigned int text_decoration: 2;
 	unsigned int overflow_wrap : 1;
+	unsigned int border_collapse: 1;
 	/* Ensure the extra bits in the bitfield are copied
 	 * on structure copies. */
 	unsigned int blank : 3;
@@ -426,6 +433,12 @@ struct fz_html_box_s
 
 	const char *tag, *id, *href;
 	const fz_css_style *style;
+	// rowspan / colspan text
+	const char *merge, *span;
+	// link to next merging cell
+	fz_html_box *merging, *spanning;
+	// link to merging head if splitted
+	fz_html_box *submerging;
 
 	union {
 		/* Only needed during build stage */
@@ -498,6 +511,9 @@ struct fz_html_flow_s
 
 	/* Whether the markup specifies a given language. */
 	unsigned short markup_lang;
+
+	/* image rotate angle */
+	unsigned int rotate_angle;
 
 	float x, y, w, h;
 	fz_html_box *box; /* for style and em */

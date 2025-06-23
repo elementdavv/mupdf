@@ -19,6 +19,12 @@ fz_office_to_html_opts;
 
 typedef struct
 {
+	int col1, col2, row1, row2;
+}
+merge_cell;
+
+typedef struct
+{
 	fz_office_to_html_opts opts;
 
 	fz_output *out;
@@ -34,6 +40,12 @@ typedef struct
 	/* The column we last signalled. If this is 0, then we haven't
 	 * even started a row yet. */
 	int col_signalled;
+	/* Rows are numbered from 1. */
+	/* the row we are at*/
+	int row_at;
+
+	merge_cell **merge_cells;
+	int merge_len;
 
 	/* If we are currently processing a spreadsheet, store the current
 	 * sheets name here. */
@@ -48,6 +60,10 @@ typedef struct
 
 	char *title;
 } doc_info;
+
+static char *lookup_rel(fz_context *ctx, fz_xml *rels, const char *id);
+static char *make_absolute_path(fz_context *ctx, const char *abs, const char *rel);
+static char *make_rel_name(fz_context *ctx, const char *file);
 
 static void
 doc_escape(fz_context *ctx, fz_output *output, const char *str_)
@@ -167,12 +183,47 @@ show_footnote(fz_context *ctx, fz_xml *v, doc_info *info)
 }
 
 static void
-process_doc_stream(fz_context *ctx, fz_xml *xml, doc_info *info, int do_pages)
+process_image(fz_context *ctx, doc_info *info, char *rid, fz_xml *rels, fz_archive *arch, const char *file)
+{
+	if (!rels) return;
+
+	char *iafile = NULL;
+	fz_buffer *buf = NULL;
+	fz_image *img = NULL;
+
+	fz_try(ctx)
+	{
+		char *ifile = lookup_rel(ctx, rels, rid);
+		if (!ifile) return;
+
+		iafile = make_absolute_path(ctx, file, ifile);
+		buf = fz_read_archive_entry(ctx, arch, iafile);
+		img = fz_new_image_from_buffer(ctx, buf);
+		fz_write_string(ctx, info->out, "<img loading=\"lazy\" src=\"");
+		fz_write_image_as_data_uri(ctx, info->out, img);
+		fz_write_string(ctx, info->out, "\"");
+	}
+	fz_always(ctx)
+	{
+		fz_free(ctx, iafile);
+		fz_drop_buffer(ctx, buf);
+		fz_drop_image(ctx, img);
+	}
+	fz_catch(ctx)
+	{
+		// fz_rethrow(ctx);
+	}
+}
+
+static void
+process_doc_stream(fz_context *ctx, fz_xml *xml, doc_info *info, int do_pages, fz_xml *rels, fz_archive *arch, const char *file)
 {
 	fz_xml *pos;
 	fz_xml *next;
 	const char *paragraph_style = NULL;
 	const char *inline_style = NULL;
+	int is_image = 0;
+	int grid_span = 0;
 
 #ifdef DEBUG_OFFICE_TO_HTML
 	fz_write_printf(ctx, fz_stddbg(ctx), "process_doc_stream:\n");
@@ -285,6 +336,70 @@ process_doc_stream(fz_context *ctx, fz_xml *xml, doc_info *info, int do_pages)
 			{
 				fz_write_string(ctx, info->out, "\t");
 			}
+			else if (fz_xml_is_tag(pos, "tbl"))				// w:tbl
+			{
+				fz_write_string(ctx, info->out, "<table>\n");
+			}
+			else if (fz_xml_is_tag(pos, "tr"))				// w:tr
+			{
+				fz_write_string(ctx, info->out, "<tr>\n");
+			}
+			else if (fz_xml_is_tag(pos, "tc"))				// w:tc
+			{
+				fz_write_string(ctx, info->out, "<td");
+			}
+			else if (fz_xml_is_tag(pos, "gridSpan"))		// w:gridSpan
+			{
+				char *gspan = fz_xml_att(pos, "w:val");
+				if (gspan) {
+					grid_span = fz_atoi(gspan);
+					if (grid_span > 1) {
+						fz_write_string(ctx, info->out, " span=\"restart\"");
+						grid_span--;
+					}
+				}
+			}
+			else if (fz_xml_is_tag(pos, "vMerge"))			// w:vMerge
+			{
+				char *vMerge = fz_xml_att(pos, "w:val");
+				if (vMerge && !strcmp(vMerge, "restart"))
+					fz_write_string(ctx, info->out, " merge=\"restart\"");
+				else
+					fz_write_string(ctx, info->out, " merge=\"continue\"");
+			}
+			else if (fz_xml_is_tag(pos, "hMerge"))			// w:hMerge
+			{
+				char *hMerge = fz_xml_att(pos, "w:val");
+				if (hMerge && !strcmp(hMerge, "restart"))
+					fz_write_string(ctx, info->out, " span=\"restart\"");
+				else
+					fz_write_string(ctx, info->out, " span=\"continue\"");
+			}
+			else if (fz_xml_is_tag(pos, "blip"))			// a:blip
+			{
+				char *rid = fz_xml_att(pos, "r:embed");
+				is_image = 1;
+				process_image(ctx, info, rid, rels, arch, file);
+			}
+			else if (fz_xml_is_tag(pos, "imagedata"))		// v:imagedata
+			{
+				char *rid = fz_xml_att(pos, "r:id");
+				is_image = 1;
+				process_image(ctx, info, rid, rels, arch, file);
+			}
+			else if (fz_xml_is_tag(pos, "xfrm"))			// a:xfrm, blip prop
+			{
+				if (is_image) {
+					is_image = 0;
+					char *rot = fz_xml_att(pos, "rot");
+					if (rot) {
+						fz_write_string(ctx, info->out, " rotate-angle=\"");
+						fz_write_string(ctx, info->out, rot);
+						fz_write_string(ctx, info->out, "\"");
+					}
+					fz_write_string(ctx, info->out, ">\n");
+				}
+			}
 			else if (do_pages && fz_xml_is_tag(pos, "lastRenderedPageBreak"))
 			{
 				if (info->page)
@@ -338,6 +453,33 @@ process_doc_stream(fz_context *ctx, fz_xml *xml, doc_info *info, int do_pages)
 					inline_style = NULL;
 				}
 			}
+			else if (fz_xml_is_tag(pos, "shape"))		// v:shape, closing imagedata
+			{
+				if (is_image) {
+					is_image = 0;
+					fz_write_string(ctx, info->out, ">\n");
+				}
+			}
+			else if (fz_xml_is_tag(pos, "tcPr"))		// w:tcPr
+			{
+				fz_write_string(ctx, info->out, ">\n");
+			}
+			else if (fz_xml_is_tag(pos, "tc"))			// w:tc
+			{
+				fz_write_string(ctx, info->out, "</td>\n");
+				if (grid_span > 0) {
+					fz_write_string(ctx, info->out, "<td span=\"continue\"></td>\n");
+					grid_span--;
+				}
+			}
+			else if (fz_xml_is_tag(pos, "tr"))			// w:tr
+			{
+				fz_write_string(ctx, info->out, "</tr>\n");
+			}
+			else if (fz_xml_is_tag(pos, "tbl"))			// w:tbl
+			{
+				fz_write_string(ctx, info->out, "</table>\n");
+			}
 			next = fz_xml_next(pos);
 			if (next)
 			{
@@ -354,12 +496,27 @@ process_doc_stream(fz_context *ctx, fz_xml *xml, doc_info *info, int do_pages)
 static void
 process_item(fz_context *ctx, fz_archive *arch, const char *file, doc_info *info, int do_pages)
 {
+	char *file_rels;
+	fz_xml *rels = NULL;
+
+	if (file == NULL)
+		return;
+
+	file_rels = make_rel_name(ctx, file);
+
+	fz_var(rels);
+
+	rels = fz_parse_xml_archive_entry(ctx, arch, file_rels, 0);
 	fz_xml *xml = fz_parse_xml_archive_entry(ctx, arch, file, 1);
 
 	fz_try(ctx)
-		process_doc_stream(ctx, xml, info, do_pages);
+		process_doc_stream(ctx, xml, info, do_pages, rels, arch, file);
 	fz_always(ctx)
+	{
 		fz_drop_xml(ctx, xml);
+		fz_drop_xml(ctx, rels);
+		fz_free(ctx, file_rels);
+	}
 	fz_catch(ctx)
 		fz_rethrow(ctx);
 }
@@ -446,29 +603,53 @@ static char *lookup_rel(fz_context *ctx, fz_xml *rels, const char *id)
 	return NULL;
 }
 
+static char *get_merge_str(doc_info *info) {
+	int col = info->col_signalled;
+	int row = info->row_at;
+
+	for (int i = 0; i < info->merge_len; i++) {
+		merge_cell* mc = info->merge_cells[i];
+		if (col >= mc->col1 && col <= mc->col2 && row >= mc->row1 && row <= mc->row2) {
+			if (col > mc->col1)
+				return " span=\"continue\"";
+			if (row > mc->row1) {
+				if (mc->col1 < mc->col2)
+					return " span=\"restart\" merge=\"continue\"";
+				else
+					return " merge=\"continue\"";
+			}
+			if (mc->col1 < mc->col2 && mc->row1 < mc->row2)
+				return " span=\"restart\" merge=\"restart\"";
+			if (mc->col1 < mc->col2)
+				return " span=\"restart\"";
+			if (mc->row1 < mc->row2)
+				return " merge=\"restart\"";
+		}
+	}
+	return "";
+}
+
 static void
 send_cell_formatting(fz_context *ctx, doc_info *info)
 {
 	if (info->col_signalled == 0)
 	{
 		fz_write_string(ctx, info->out, "<tr>\n");
-		info->col_signalled = 1;
-		if (info->col_at > 1)
-			fz_write_string(ctx, info->out, "<td>");
 	}
 
 	/* Send the label */
 	while (info->col_signalled < info->col_at)
 	{
-		fz_write_string(ctx, info->out, "</td>");
+		if (info->col_signalled > 0)
+			fz_write_string(ctx, info->out, "</td>");
 		info->col_signalled++;
 		if (info->col_signalled < info->col_at)
-			fz_write_string(ctx, info->out, "<td>");
+			fz_write_printf(ctx, info->out, "<td%s>", get_merge_str(info));
 	}
 	if (info->sheet_name && info->sheet_name[0])
-		fz_write_printf(ctx, info->out, "<td id=\"%s!%s\">", info->sheet_name, info->label);
+		fz_write_printf(ctx, info->out, "<td id=\"%s!%s\"%s>", info->sheet_name, info->label, get_merge_str(info));
 	else
-		fz_write_printf(ctx, info->out, "<td id=\"%s\">", info->label);
+		fz_write_printf(ctx, info->out, "<td id=\"%s\"%s>", info->label, get_merge_str(info));
 }
 
 static void
@@ -490,7 +671,7 @@ show_shared_string(fz_context *ctx, fz_xml *v, doc_info *info)
 }
 
 static int
-col_from_label(const char *label)
+col_from_label(const char *label, int *row)
 {
 	int col = 0;
 	int len = 26;
@@ -516,6 +697,9 @@ col_from_label(const char *label)
 	}
 	while (*label >= 'A' && *label <= 'Z');
 
+	if (row)
+		*row = fz_atoi(label);
+
 	return col+1;
 }
 
@@ -524,6 +708,13 @@ show_cell_text(fz_context *ctx, fz_xml *top, doc_info *info)
 {
 	fz_xml *pos = top;
 	fz_xml *next;
+
+	if (!pos)
+	{
+		send_cell_formatting(ctx, info);
+		doc_escape(ctx, info->out, " ");
+		return;
+	}
 
 	while (pos)
 	{
@@ -588,7 +779,7 @@ arrived_at_cell(fz_context *ctx, doc_info *info, const char *label)
 	if (label == NULL && info->label)
 		return;
 
-	col = label ? col_from_label(label) : 0;
+	col = label ? col_from_label(label, NULL) : 0;
 
 	fz_free(ctx, info->label);
 	info->label = NULL;
@@ -610,11 +801,19 @@ show_cell(fz_context *ctx, fz_xml *cell, doc_info *info)
 		show_cell_text(ctx, v, info);
 }
 
+static void add_blank_cell(fz_context *ctx, doc_info *info, int colnum) {
+	if (info->col_signalled < colnum) {
+		info->col_at = colnum;
+		show_cell_text(ctx, NULL, info);
+	}
+}
+
 static void
-new_row(fz_context *ctx, doc_info *info)
+new_row(fz_context *ctx, doc_info *info, int colnum)
 {
 	if (info->col_signalled)
 	{
+		add_blank_cell(ctx, info, colnum);
 		/* We've sent at least one cell. So need to close the
 		 * td and tr */
 		fz_write_string(ctx, info->out, "</td>\n</tr>\n");
@@ -626,9 +825,76 @@ new_row(fz_context *ctx, doc_info *info)
 		fz_write_string(ctx, info->out, "<tr></tr>\n");
 	}
 	info->col_at = 1;
+	info->row_at++;
 	info->col_signalled = 0;
 	fz_free(ctx, info->label);
 	info->label = NULL;
+}
+
+static void getMergeInfo(fz_context *ctx, fz_xml *xml, doc_info *info) {
+	fz_xml *pos = xml;
+	fz_xml *next;
+	info->merge_cells = NULL;
+	info->merge_len = 0;
+
+	fz_try(ctx)
+	{
+		int i = 0;
+		while (pos)
+		{
+			if (fz_xml_is_tag(pos, "mergeCells"))
+			{
+				char *count = fz_xml_att(pos, "count");
+				if (count)
+				{
+					info->merge_len = fz_atoi(count);
+					if (info->merge_len)
+						info->merge_cells = fz_malloc_array(ctx, info->merge_len, merge_cell*);
+				}
+			}
+			if (fz_xml_is_tag(pos, "mergeCell"))
+			{
+				char *ref = fz_xml_att(pos, "ref");
+				if (ref && i < info->merge_len) {
+					merge_cell *mc = fz_malloc_struct(ctx, merge_cell);
+					char *token = strtok(ref, ":");
+					mc->col1 = col_from_label(token, &(mc->row1));
+					token = strtok(NULL, ":");
+					mc->col2 = col_from_label(token, &(mc->row2));
+					info->merge_cells[i++] = mc;
+				}
+			}
+			else
+			{
+				next = fz_xml_down(pos);
+				if (next)
+				{
+					pos = next;
+					continue;
+				}
+			}
+			next = fz_xml_next(pos);
+			if (next)
+			{
+				pos = next;
+				continue;
+			}
+			while (1)
+			{
+				pos = fz_xml_up(pos);
+				if (pos == NULL)
+					break;
+				next = fz_xml_next(pos);
+				if (next)
+				{
+					pos = next;
+					break;
+				}
+			}
+		}
+	}
+	fz_catch(ctx)
+		fz_rethrow(ctx);
 }
 
 static void
@@ -645,10 +911,15 @@ process_sheet(fz_context *ctx, fz_archive *arch, const char *name, const char *f
 
 	info->sheet_name = name;
 	info->col_at = 0;
+	info->row_at = 1;
 	info->col_signalled = 0;
+
+	int colnum = 0;
 
 	fz_try(ctx)
 	{
+		getMergeInfo(ctx, xml, info);
+
 		fz_xml *pos = xml;
 		fz_xml *next;
 
@@ -659,6 +930,10 @@ process_sheet(fz_context *ctx, fz_archive *arch, const char *name, const char *f
 			{
 				show_cell(ctx, pos, info);
 				/* Do NOT go down, we've already dealt with that. */
+			}
+			else if (fz_xml_is_tag(pos, "col"))
+			{
+				colnum++;
 			}
 			else
 			{
@@ -692,7 +967,7 @@ process_sheet(fz_context *ctx, fz_archive *arch, const char *name, const char *f
 
 				/* We've returned to a node. See if it's a 'row'. */
 				if (fz_xml_is_tag(pos, "row"))
-					new_row(ctx, info);
+					new_row(ctx, info, colnum);
 
 				next = fz_xml_next(pos);
 				if (next)
@@ -702,12 +977,18 @@ process_sheet(fz_context *ctx, fz_archive *arch, const char *name, const char *f
 				}
 			}
 		}
-		if (info->col_signalled)
+		if (info->col_signalled) {
+			add_blank_cell(ctx, info, colnum);
 			fz_write_printf(ctx, info->out, "</td>\n</tr>\n");
+		}
 		fz_write_printf(ctx, info->out, "</table>\n");
 	}
-	fz_always(ctx)
+	fz_always(ctx) {
 		fz_drop_xml(ctx, xml);
+		for (int i = 0; i< info->merge_len; ++i)
+			fz_free(ctx, info->merge_cells[i]);
+		fz_free(ctx, info->merge_cells);
+	}
 	fz_catch(ctx)
 		fz_rethrow(ctx);
 }
@@ -725,7 +1006,6 @@ make_absolute_path(fz_context *ctx, const char *abs, const char *rel)
 {
 	const char *a = abs;
 	const char *aslash = a;
-	int up = 0;
 	size_t z1, z2;
 	char *s;
 
@@ -738,25 +1018,8 @@ make_absolute_path(fz_context *ctx, const char *abs, const char *rel)
 		if (*a == '/')
 			aslash = a+1;
 
-	while (rel[0] == '.')
-	{
-		if (rel[1] == '/')
-			rel += 2;
-		else if (rel[1] == '.' && rel[2] == '/')
-			rel += 3, up++;
-		else
-			fz_throw(ctx, FZ_ERROR_FORMAT, "Unresolvable path");
-	}
 	if (rel[0] == 0)
 		fz_throw(ctx, FZ_ERROR_FORMAT, "Unresolvable path");
-
-	while (up)
-	{
-		while (aslash != abs && aslash[-1] != '/')
-			aslash--;
-
-		up--;
-	}
 
 	z1 = aslash - abs;
 	z2 = strlen(rel);
@@ -1006,6 +1269,7 @@ process_office_document(fz_context *ctx, fz_archive *arch, const char *file, doc
 		pos = fz_xml_find_dfs(xml, "sheet", NULL, NULL);
 		if (pos)
 		{
+			int first = 1;
 			load_shared_strings(ctx, arch, rels, info, file);
 			while (pos)
 			{
@@ -1015,12 +1279,17 @@ process_office_document(fz_context *ctx, fz_archive *arch, const char *file, doc
 
 				if (sheet)
 				{
+					if (first)
+						fz_write_printf(ctx, info->out, "<pre>%s</pre>", name);
+					else
+						fz_write_printf(ctx, info->out, "<pre style=\"page-break-before:always\">%s</pre>", name);
 					resolved_rel = make_absolute_path(ctx, file, sheet);
 					process_sheet(ctx, arch, name, resolved_rel, info);
 					fz_free(ctx, resolved_rel);
 					resolved_rel = NULL;
 				}
 				pos = fz_xml_find_next_dfs(pos, "sheet", NULL, NULL);
+				first = 0;
 			}
 			break;
 		}
@@ -1029,6 +1298,7 @@ process_office_document(fz_context *ctx, fz_archive *arch, const char *file, doc
 		pos = fz_xml_find_dfs(xml, "sldId", NULL, NULL);
 		if (pos)
 		{
+			int first = 1;
 			while (pos)
 			{
 				char *id = fz_xml_att(pos, "r:id");
@@ -1036,12 +1306,17 @@ process_office_document(fz_context *ctx, fz_archive *arch, const char *file, doc
 
 				if (sheet)
 				{
+					if (first)
+						fz_write_printf(ctx, info->out, "<pre>Slide %d</pre>", info->page + 1);
+					else
+						fz_write_printf(ctx, info->out, "<pre style=\"page-break-before:always\">Slide %d</pre>", info->page + 1);
 					resolved_rel = make_absolute_path(ctx, file, sheet);
 					process_slide(ctx, arch, resolved_rel, info);
 					fz_free(ctx, resolved_rel);
 					resolved_rel = NULL;
 				}
 				pos = fz_xml_find_next_dfs(pos, "sldId", NULL, NULL);
+				first = 0;
 			}
 			break;
 		}
@@ -1049,7 +1324,7 @@ process_office_document(fz_context *ctx, fz_archive *arch, const char *file, doc
 		/* Let's try it as word. */
 		{
 			load_footnotes(ctx, arch, rels, info, file);
-			process_doc_stream(ctx, xml, info, 1);
+			process_doc_stream(ctx, xml, info, 1, rels, arch, file);
 		}
 	}
 	fz_always(ctx)
@@ -1158,6 +1433,10 @@ fz_office_to_html(fz_context *ctx, fz_html_font_set *set, fz_buffer *buffer_in, 
 				const char *file = fz_xml_att(pos, "Target");
 				fz_write_string(ctx, info.out, "<head>\n");
 				process_office_document_properties(ctx, archive, file, &info);
+				fz_write_string(ctx, info.out, "<style>\n");
+				fz_write_string(ctx, info.out, "table{border:1px solid;}\n");
+				fz_write_string(ctx, info.out, "td{border:1px solid;}\n");
+				fz_write_string(ctx, info.out, "</style>\n");
 				fz_write_string(ctx, info.out, "</head>\n");
 			}
 
@@ -1173,6 +1452,8 @@ fz_office_to_html(fz_context *ctx, fz_html_font_set *set, fz_buffer *buffer_in, 
 					process_office_document(ctx, archive, file, &info);
 				pos = fz_xml_find_next_dfs(pos, "Relationship", "Type", schema);
 			}
+
+			fz_write_string(ctx, info.out, "</body></html>\n");
 		}
 	}
 	fz_always(ctx)
@@ -1286,7 +1567,7 @@ office_recognize_doc_content(fz_context *ctx, const fz_document_handler *handler
 		if (xml)
 		{
 			if (fz_xml_find_dfs(xml, "rootfile", "media-type", "application/hwpml-package+xml"))
-				ret = 75; /* HWPX */
+				ret = 100; /* HWPX */
 			break;
 		}
 		xml = fz_try_parse_xml_archive_entry(ctx, arch, "_rels/.rels", 0);
@@ -1294,7 +1575,7 @@ office_recognize_doc_content(fz_context *ctx, const fz_document_handler *handler
 		{
 			if (fz_xml_find_dfs(xml, "Relationship", "Type", "http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument"))
 			{
-				ret = 75; /* DOCX | PPTX | XLSX */
+				ret = 100; /* DOCX | PPTX | XLSX */
 			}
 			break;
 		}

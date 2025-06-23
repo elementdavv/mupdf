@@ -32,6 +32,22 @@ enum { T, R, B, L };
 
 #define DEFAULT_DIR FZ_BIDI_LTR
 
+typedef struct merge_cell_s merge_cell;
+typedef struct table_info_s table_info;
+
+struct merge_cell_s
+{
+	int col1, col2, row1, row2;
+	merge_cell *next;
+};
+
+struct table_info_s
+{
+	int col_at, row_at;
+	merge_cell *merge_cell;
+	table_info *next;
+};
+
 static const char *html_default_css =
 "@page{margin:3em 2em}"
 "a{color:#06C;text-decoration:underline}"
@@ -306,11 +322,15 @@ static void add_flow_word(fz_context *ctx, fz_pool *pool, fz_html_box *top, fz_h
 	flow->markup_lang = lang;
 }
 
-static void add_flow_image(fz_context *ctx, fz_pool *pool, fz_html_box *top, fz_html_box *inline_box, fz_image *img)
+static void add_flow_image(fz_context *ctx, fz_pool *pool, fz_html_box *top, fz_html_box *inline_box, fz_image *img, fz_xml *node)
 {
 	fz_html_flow *flow = add_flow(ctx, pool, top, inline_box, FLOW_IMAGE, 0);
-	if (flow)
+	if (flow) {
 		flow->content.image = fz_keep_image(ctx, img);
+		const char *rot = fz_xml_att(node, "rotate-angle");
+		if (rot)
+			flow->rotate_angle = fz_atoi(rot) / 60000;
+	}
 }
 
 static void add_flow_anchor(fz_context *ctx, fz_pool *pool, fz_html_box *top, fz_html_box *inline_box)
@@ -581,7 +601,7 @@ static fz_image *load_svg_image(fz_context *ctx, fz_archive *zip, const char *ba
 	return img;
 }
 
-static void generate_image(fz_context *ctx, fz_html_box *box, fz_image *img, struct genstate *g)
+static void generate_image(fz_context *ctx, fz_html_box *box, fz_image *img, struct genstate *g, fz_xml *node)
 {
 	fz_html_box *flow;
 	fz_pool *pool = g->pool;
@@ -600,7 +620,7 @@ static void generate_image(fz_context *ctx, fz_html_box *box, fz_image *img, str
 		fz_try(ctx)
 		{
 			add_flow_sbreak(ctx, pool, flow, box);
-			add_flow_image(ctx, pool, flow, box, img);
+			add_flow_image(ctx, pool, flow, box, img, node);
 			add_flow_sbreak(ctx, pool, flow, box);
 		}
 		fz_always(ctx)
@@ -675,6 +695,21 @@ fz_html *fz_keep_html(fz_context *ctx, fz_html *html)
 	return fz_keep_storable(ctx, &html->tree.storable);
 }
 
+static fz_html_box *new_cell_box(fz_context *ctx, struct genstate *g, fz_css_style *style)
+{
+	fz_html_box *box = fz_pool_alloc(ctx, g->pool, offsetof(fz_html_box, u) + sizeof(box->u.block));
+
+	box->type = BOX_TABLE_CELL;
+	box->is_first_flow = 0;
+	box->markup_dir = g->markup_dir;
+	box->heading = 0;
+	box->list_item = 0;
+	box->style = fz_css_enlist(ctx, style, &g->styles, g->pool);
+	box->tag = "td";
+
+	return box;
+}
+
 static fz_html_box *new_box(fz_context *ctx, struct genstate *g, fz_xml *node, int type, fz_css_style *style)
 {
 	fz_html_box *box;
@@ -696,6 +731,20 @@ static fz_html_box *new_box(fz_context *ctx, struct genstate *g, fz_xml *node, i
 	box->list_item = 0;
 
 	box->style = fz_css_enlist(ctx, style, &g->styles, g->pool);
+
+	if (type == BOX_TABLE_CELL) {
+		char *merge = fz_xml_att(node, "merge");
+		if (merge)
+			box->merge = fz_strdup(ctx, merge);
+		else
+			box->merge = NULL;
+
+		char *span = fz_xml_att(node, "span");
+		if (span)
+			box->span = fz_strdup(ctx, span);
+		else
+			box->span = NULL;
+	}
 
 	if (tag)
 	{
@@ -819,7 +868,7 @@ static fz_html_box *find_inline_context(fz_context *ctx, struct genstate *g, fz_
 	return flow_box;
 }
 
-static void gen2_children(fz_context *ctx, struct genstate *g, fz_html_box *root_box, fz_xml *root_node, fz_css_match *root_match);
+static void gen2_children(fz_context *ctx, struct genstate *g, fz_html_box *root_box, fz_xml *root_node, fz_css_match *root_match, table_info **tbl_info);
 
 static void gen2_text(fz_context *ctx, struct genstate *g, fz_html_box *root_box, fz_xml *node)
 {
@@ -926,7 +975,72 @@ static fz_html_box *gen2_table_row(fz_context *ctx, struct genstate *g, fz_html_
 	return this_box;
 }
 
-static fz_html_box *gen2_table_cell(fz_context *ctx, struct genstate *g, fz_html_box *root_box, fz_xml *node, fz_css_style *style)
+static void add_merge_cell(fz_context *ctx, table_info *tbl_info, int colspan, int rowspan);
+static table_info *get_current_tble(table_info *tbl_info);
+
+static void parse_cell_span(fz_context *ctx, fz_xml *node, fz_html_box *this_box, table_info *tbl_info) {
+	if (!tbl_info) return;
+	int rs = 1, cs = 1;
+
+	char *rowspan = fz_xml_att(node, "rowspan");
+	if (rowspan)
+		rs = fz_atoi(rowspan);
+
+	char *colspan = fz_xml_att(node, "colspan");
+	if (colspan)
+		cs = fz_atoi(colspan);
+
+	if (cs < 1) cs = 1;
+	if (rs < 1) rs = 1;;
+	if (rs == 1 && cs == 1) return;
+
+	add_merge_cell(ctx, get_current_tble(tbl_info), cs, rs);
+	if (cs > 1) this_box->span = "restart";
+	if (rs > 1) this_box->merge = "restart";
+}
+
+static fz_html_box *new_cell_box_with_span(fz_context *ctx, struct genstate *g, fz_css_style *style, merge_cell *mcell, int col_at)
+{
+	fz_html_box *this_box = new_cell_box(ctx, g, style);
+	if (col_at > mcell->col1) {
+		this_box->span = "continue";
+		this_box->merge = NULL;
+	}
+	else if (mcell->col2 > mcell->col1) {
+		this_box->span = "restart";
+		this_box->merge = "continue";
+	}
+	else {
+		this_box->span = NULL;
+		this_box->merge = "continue";
+	}
+	return this_box;
+}
+
+// post: 0=prev, 1=post
+static void
+add_blank_cell(fz_context *ctx, struct genstate *g, fz_css_style *style, fz_html_box *row_box, table_info *tbl_info, int post)
+{
+	table_info *cinfo = get_current_tble(tbl_info);
+	if (!cinfo) return;
+	merge_cell *mcell = cinfo->merge_cell;
+	int col_at = cinfo->col_at + post;
+	while (mcell) {
+		if (cinfo->row_at >= mcell->row1 && cinfo->row_at <= mcell->row2)
+		{
+			while (col_at >= mcell->col1 && col_at <= mcell->col2)
+			{
+				fz_html_box *this_box = new_cell_box_with_span(ctx, g, style, mcell, col_at);
+				append_box(ctx, row_box, this_box);
+				cinfo->col_at++;
+				col_at++;
+			}
+		}
+		mcell = mcell->next;
+	}
+}
+
+static fz_html_box *gen2_table_cell(fz_context *ctx, struct genstate *g, fz_html_box *root_box, fz_xml *node, fz_css_style *style, table_info *tbl_info)
 {
 	fz_html_box *this_box, *row_box;
 
@@ -934,8 +1048,12 @@ static fz_html_box *gen2_table_cell(fz_context *ctx, struct genstate *g, fz_html
 	if (!row_box)
 		return gen2_block(ctx, g, root_box, node, style);
 
+	add_blank_cell(ctx, g, style, row_box, tbl_info, 0);
 	this_box = new_box(ctx, g, node, BOX_TABLE_CELL, style);
+	parse_cell_span(ctx, node, this_box, tbl_info);
 	append_box(ctx, row_box, this_box);
+	add_blank_cell(ctx, g, style, row_box, tbl_info, 1);
+
 	return this_box;
 }
 
@@ -949,7 +1067,7 @@ static void gen2_image_common(fz_context *ctx, struct genstate *g, fz_html_box *
 		root_box = find_inline_context(ctx, g, root_box);
 		img_inline_box = new_box(ctx, g, node, BOX_INLINE, style);
 		append_box(ctx, root_box, img_inline_box);
-		generate_image(ctx, img_inline_box, img, g);
+		generate_image(ctx, img_inline_box, img, g, node);
 	}
 	else
 	{
@@ -960,7 +1078,7 @@ static void gen2_image_common(fz_context *ctx, struct genstate *g, fz_html_box *
 		root_box = find_inline_context(ctx, g, img_block_box);
 		img_inline_box = new_box(ctx, g, NULL, BOX_INLINE, style);
 		append_box(ctx, root_box, img_inline_box);
-		generate_image(ctx, img_inline_box, img, g);
+		generate_image(ctx, img_inline_box, img, g, node);
 	}
 }
 
@@ -1034,6 +1152,8 @@ static int get_heading_from_tag(fz_context *ctx, struct genstate *g, const char 
 static void gen2_tag(fz_context *ctx, struct genstate *g, fz_html_box *root_box, fz_xml *node,
 	fz_css_match *match, int display, fz_css_style *style)
 {
+	static table_info *tbl_info = NULL;
+
 	fz_html_box *this_box;
 	const char *tag;
 	const char *lang_att;
@@ -1109,7 +1229,7 @@ static void gen2_tag(fz_context *ctx, struct genstate *g, fz_html_box *root_box,
 		this_box = gen2_table_row(ctx, g, root_box, node, style);
 		break;
 	case DIS_TABLE_CELL:
-		this_box = gen2_table_cell(ctx, g, root_box, node, style);
+		this_box = gen2_table_cell(ctx, g, root_box, node, style, tbl_info);
 		break;
 
 	case DIS_INLINE:
@@ -1122,19 +1242,19 @@ static void gen2_tag(fz_context *ctx, struct genstate *g, fz_html_box *root_box,
 	{
 		int save_list_counter = g->list_counter;
 		g->list_counter = 0;
-		gen2_children(ctx, g, this_box, node, match);
+		gen2_children(ctx, g, this_box, node, match, &tbl_info);
 		g->list_counter = save_list_counter;
 	}
 	else if (tag && !strcmp(tag, "section"))
 	{
 		int save_section_depth = g->section_depth;
 		g->section_depth++;
-		gen2_children(ctx, g, this_box, node, match);
+		gen2_children(ctx, g, this_box, node, match, &tbl_info);
 		g->section_depth = save_section_depth;
 	}
 	else
 	{
-		gen2_children(ctx, g, this_box, node, match);
+		gen2_children(ctx, g, this_box, node, match, &tbl_info);
 	}
 
 	g->markup_dir = save_markup_dir;
@@ -1142,7 +1262,115 @@ static void gen2_tag(fz_context *ctx, struct genstate *g, fz_html_box *root_box,
 	g->href = save_href;
 }
 
-static void gen2_children(fz_context *ctx, struct genstate *g, fz_html_box *root_box, fz_xml *root_node, fz_css_match *root_match)
+static table_info *get_current_tble(table_info *tbl_info) {
+	table_info *info = tbl_info;;
+	if (info)
+		while (info->next) info = info->next;
+	return info;
+}
+
+static void add_merge_cell(fz_context *ctx, table_info *tbl_info, int colspan, int rowspan) {
+	table_info *cinfo = get_current_tble(tbl_info);
+	if (!cinfo) return;
+
+	fz_try(ctx) {
+		merge_cell *mcell = cinfo->merge_cell;
+		merge_cell *last;
+
+		if (mcell)
+			while (mcell->next) mcell = mcell->next;
+
+		if (mcell) {
+			mcell->next = fz_malloc_struct(ctx, merge_cell);
+			last = mcell->next;
+		}
+		else {
+			cinfo->merge_cell = fz_malloc_struct(ctx, merge_cell);
+			last = cinfo->merge_cell;
+		}
+		last->col1 = cinfo->col_at;
+		last->col2 = cinfo->col_at + colspan - 1;
+		last->row1 = cinfo->row_at;
+		last->row2 = cinfo->row_at + rowspan - 1;
+		last->next = NULL;
+	}
+	fz_catch(ctx)
+		fz_rethrow(ctx);
+}
+
+static void enter_table(fz_context *ctx, table_info **tbl_info) {
+	table_info *cinfo = get_current_tble(*tbl_info);
+	table_info *last;
+
+	fz_try(ctx) {
+		if (cinfo) {
+			cinfo->next = fz_malloc_struct(ctx, table_info);
+			last = cinfo->next;
+		}
+		else {
+			*tbl_info = fz_malloc_struct(ctx, table_info);
+			last = *tbl_info;
+		}
+		last->row_at = 0;
+		last->col_at = 0;
+		last->merge_cell = NULL;
+		last->next = NULL;
+	}
+	fz_catch(ctx)
+		fz_rethrow(ctx);
+}
+
+static void enter_row(table_info *tbl_info) {
+	table_info *cinfo = get_current_tble(tbl_info);
+	if (cinfo) {
+		cinfo->row_at++;
+		cinfo->col_at = 0;
+	}
+}
+
+static void enter_cell(table_info *tbl_info) {
+	table_info *cinfo = get_current_tble(tbl_info);
+	if (cinfo) {
+		cinfo->col_at++;
+	}
+}
+
+static void drop_merge_cell(fz_context *ctx, merge_cell* mcell) {
+	if (mcell->next)
+		drop_merge_cell(ctx,  mcell->next);
+	fz_free(ctx, mcell);
+}
+
+static void drop_table(fz_context *ctx, table_info *tbl_info) {
+	merge_cell *mcell = tbl_info->merge_cell;
+	if (mcell) {
+		drop_merge_cell(ctx, mcell);
+	}
+	fz_free(ctx, tbl_info);
+}
+
+static void exit_table(fz_context *ctx, table_info **tbl_info) {
+	if (!*tbl_info) return;
+
+	fz_try(ctx) {
+		if (!(*tbl_info)->next) {
+			drop_table(ctx, *tbl_info);
+			*tbl_info = NULL;
+		}
+		else {
+			table_info *tinfo = *tbl_info;
+			while (tinfo->next->next) {
+				tinfo = tinfo->next;
+			}
+			drop_table(ctx, tinfo->next);
+			tinfo->next = NULL;
+		}
+	}
+	fz_catch(ctx)
+		fz_rethrow(ctx);
+}
+
+static void gen2_children(fz_context *ctx, struct genstate *g, fz_html_box *root_box, fz_xml *root_node, fz_css_match *root_match, table_info **tbl_info)
 {
 	fz_xml *node;
 	const char *tag;
@@ -1155,6 +1383,19 @@ static void gen2_children(fz_context *ctx, struct genstate *g, fz_html_box *root
 		tag = fz_xml_tag(node);
 		if (tag)
 		{
+			if (!strcmp(tag, "table"))
+			{
+				enter_table(ctx, tbl_info);
+			}
+			else if (!strcmp(tag, "tr"))
+			{
+				enter_row(*tbl_info);
+			}
+			else if (!strcmp(tag, "td"))
+			{
+				enter_cell(*tbl_info);
+			}
+
 			fz_match_css(ctx, &match, root_match, g->css, node);
 			fz_apply_css_style(ctx, g->set, &style, &match);
 			display = fz_get_css_match_display(&match);
@@ -1183,6 +1424,9 @@ static void gen2_children(fz_context *ctx, struct genstate *g, fz_html_box *root
 		{
 			gen2_text(ctx, g, root_box, node);
 		}
+	}
+	if (root_box->type == BOX_TABLE) {
+		exit_table(ctx, tbl_info);
 	}
 }
 

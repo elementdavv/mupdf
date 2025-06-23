@@ -32,7 +32,7 @@
 #line 1 "source/html/css-properties.gperf"
 struct css_property_info { const char *name; int key; };
 
-#define TOTAL_KEYWORDS 64
+#define TOTAL_KEYWORDS 65
 #define MIN_WORD_LENGTH 3
 #define MAX_WORD_LENGTH 19
 #define MIN_HASH_VALUE 5
@@ -55,15 +55,15 @@ css_property_hash (register const char *str, register size_t len)
       136, 136, 136, 136, 136, 136, 136, 136, 136, 136,
       136, 136, 136, 136, 136, 136, 136, 136, 136, 136,
       136, 136, 136, 136, 136, 136, 136, 136, 136, 136,
-      136, 136, 136, 136, 136,   5, 136, 136, 136, 136,
+      136, 136, 136, 136, 136,  10, 136, 136, 136, 136,
       136, 136, 136, 136, 136, 136, 136, 136, 136, 136,
       136, 136, 136, 136, 136, 136, 136, 136, 136, 136,
       136, 136, 136, 136, 136, 136, 136, 136, 136, 136,
       136, 136, 136, 136, 136, 136, 136, 136, 136, 136,
       136, 136, 136, 136, 136, 136, 136,  35,   5,   0,
-       15,  10,  10,  65,  55,  70, 136, 136,   0,  20,
-        5,   0,   0,  15,   0,  40,  20,  10,  15,   5,
-      136,   5, 136, 136, 136, 136, 136, 136, 136, 136,
+       20,  10,  80,  65,  55,  70, 136, 136,   0,  20,
+        5,   0,   0,  15,   0,  40,  20,  10,   0,   5,
+      136,  25, 136, 136, 136, 136, 136, 136, 136, 136,
       136, 136, 136, 136, 136, 136, 136, 136, 136, 136,
       136, 136, 136, 136, 136, 136, 136, 136, 136, 136,
       136, 136, 136, 136, 136, 136, 136, 136, 136, 136,
@@ -89,7 +89,10 @@ static struct css_property_info css_property_list[] =
     {""}, {""}, {""}, {""}, {""},
 #line 10 "source/html/css-properties.gperf"
     {"border",PRO_BORDER},
-    {""}, {""}, {""},
+    {""},
+#line 52 "source/html/css-properties.gperf"
+    {"overflow-wrap",PRO_OVERFLOW_WRAP},
+    {""},
 #line 26 "source/html/css-properties.gperf"
     {"border-top",PRO_BORDER_TOP},
     {""},
@@ -104,17 +107,14 @@ static struct css_property_info css_property_list[] =
     {"border-right-color",PRO_BORDER_RIGHT_COLOR},
 #line 12 "source/html/css-properties.gperf"
     {"border-bottom-color",PRO_BORDER_BOTTOM_COLOR},
-    {""},
-#line 34 "source/html/css-properties.gperf"
-    {"font-family",PRO_FONT_FAMILY},
+    {""}, {""},
 #line 25 "source/html/css-properties.gperf"
     {"border-style",PRO_BORDER_STYLE},
-#line 52 "source/html/css-properties.gperf"
-    {"overflow-wrap",PRO_OVERFLOW_WRAP},
-#line 35 "source/html/css-properties.gperf"
-    {"font-size",PRO_FONT_SIZE},
-#line 36 "source/html/css-properties.gperf"
-    {"font-style",PRO_FONT_STYLE},
+    {""},
+#line 66 "source/html/css-properties.gperf"
+    {"vertical-align",PRO_VERTICAL_ALIGN},
+#line 72 "source/html/css-properties.gperf"
+    {"border-collapse",PRO_BORDER_COLLAPSE},
 #line 28 "source/html/css-properties.gperf"
     {"border-top-style",PRO_BORDER_TOP_STYLE},
 #line 18 "source/html/css-properties.gperf"
@@ -130,15 +130,10 @@ static struct css_property_info css_property_list[] =
     {"border-right",PRO_BORDER_RIGHT},
 #line 11 "source/html/css-properties.gperf"
     {"border-bottom",PRO_BORDER_BOTTOM},
-    {""}, {""},
-#line 38 "source/html/css-properties.gperf"
-    {"font-weight",PRO_FONT_WEIGHT},
-#line 37 "source/html/css-properties.gperf"
-    {"font-variant",PRO_FONT_VARIANT},
+    {""}, {""}, {""}, {""},
 #line 61 "source/html/css-properties.gperf"
     {"src",PRO_SRC},
-#line 66 "source/html/css-properties.gperf"
-    {"vertical-align",PRO_VERTICAL_ALIGN},
+    {""},
 #line 62 "source/html/css-properties.gperf"
     {"text-align",PRO_TEXT_ALIGN},
 #line 57 "source/html/css-properties.gperf"
@@ -213,27 +208,39 @@ static struct css_property_info css_property_list[] =
     {"list-style-type",PRO_LIST_STYLE_TYPE},
 #line 43 "source/html/css-properties.gperf"
     {"list-style-image",PRO_LIST_STYLE_IMAGE},
-#line 33 "source/html/css-properties.gperf"
-    {"display",PRO_DISPLAY},
-    {""},
+    {""}, {""},
+#line 35 "source/html/css-properties.gperf"
+    {"font-size",PRO_FONT_SIZE},
+#line 36 "source/html/css-properties.gperf"
+    {"font-style",PRO_FONT_STYLE},
+#line 41 "source/html/css-properties.gperf"
+    {"line-height",PRO_LINE_HEIGHT},
+    {""}, {""},
 #line 32 "source/html/css-properties.gperf"
     {"direction",PRO_DIRECTION},
 #line 67 "source/html/css-properties.gperf"
     {"visibility",PRO_VISIBILITY},
-#line 41 "source/html/css-properties.gperf"
-    {"line-height",PRO_LINE_HEIGHT},
-    {""}, {""},
-#line 8 "source/html/css-properties.gperf"
-    {"-mupdf-leading",PRO_LEADING},
-    {""}, {""},
+    {""},
 #line 53 "source/html/css-properties.gperf"
     {"padding",PRO_PADDING},
-    {""}, {""}, {""}, {""}, {""}, {""}, {""}, {""}, {""},
+    {""},
+#line 8 "source/html/css-properties.gperf"
+    {"-mupdf-leading",PRO_LEADING},
+    {""},
+#line 38 "source/html/css-properties.gperf"
+    {"font-weight",PRO_FONT_WEIGHT},
+#line 37 "source/html/css-properties.gperf"
+    {"font-variant",PRO_FONT_VARIANT},
+    {""}, {""}, {""},
+#line 34 "source/html/css-properties.gperf"
+    {"font-family",PRO_FONT_FAMILY},
     {""}, {""}, {""}, {""},
 #line 69 "source/html/css-properties.gperf"
     {"widows",PRO_WIDOWS},
+#line 33 "source/html/css-properties.gperf"
+    {"display",PRO_DISPLAY},
     {""}, {""}, {""}, {""}, {""}, {""}, {""}, {""}, {""},
-    {""}, {""}, {""}, {""},
+    {""}, {""}, {""},
 #line 70 "source/html/css-properties.gperf"
     {"width",PRO_WIDTH}
   };

@@ -745,6 +745,11 @@ static void layout_flow(fz_context *ctx, layout_data *ld, fz_html_box *box, fz_h
 			node->w = node->w * s;
 			node->h = node->h * s;
 
+			if (node->rotate_angle % 180 == 90) {
+				int t = node->w;
+				node->w = node->h;
+				node->h = t;
+			}
 		}
 		else
 		{
@@ -921,8 +926,6 @@ static void layout_table(fz_context *ctx, layout_data *ld, fz_html_box *box, fz_
 /* === LAYOUT TABLE === */
 
 // TODO: apply CSS from colgroup and col definition to table cells
-// TODO: use CSS border-collapse on table
-// TODO: use CSS/HTML column-span/colspan on table-cell
 // TODO: use CSS/HTML width on table-cell when computing maximum width
 
 struct column_width {
@@ -943,6 +946,36 @@ static float block_padding(fz_context *ctx, fz_html_box *box)
 		box->u.block.padding[L] + box->u.block.border[L] + box->u.block.margin[L] +
 		box->u.block.padding[R] + box->u.block.border[R] + box->u.block.margin[R]
 	);
+}
+
+static float table_m_width(fz_context *ctx, fz_html_box *box, float (*largest_m_width)(fz_context *, fz_html_box *))
+{
+	float *margin = box->u.block.margin;
+	float *border = box->u.block.border;
+	float *padding = box->u.block.padding;
+	float spacing = fz_from_css_number(box->style->border_spacing, box->s.layout.em, box->s.layout.w, 0);
+	if (box->style->border_collapse)
+		spacing = 0;
+
+	float r_m = 0;
+	fz_html_box *row, *cell, *child;
+	for (row = box->down; row; row = row->next) {
+		float m = 0;
+		for (cell = row->down; cell; cell = cell->next) {
+			float cell_pad = table_cell_padding(ctx, cell);
+			float child_m = 0;
+			for (child = cell->down; child; child = child->next) {
+				float mw = largest_m_width(ctx, child);
+				if (mw > child_m) child_m = mw;
+			}
+			m += child_m + cell_pad + spacing;
+		}
+		m += spacing;
+		if (m > r_m) r_m = m;
+	}
+	r_m += margin[L] + margin[R] + border[L] + border[R] + padding[L] + padding[R];
+
+	return r_m;
 }
 
 static float largest_min_width(fz_context *ctx, fz_html_box *box)
@@ -968,9 +1001,9 @@ static float largest_min_width(fz_context *ctx, fz_html_box *box)
 			if (flow->w > r_min)
 				r_min = flow->w;
 	}
-	else
+	else if (box->type == BOX_TABLE)
 	{
-		// TODO: nested TABLE
+		r_min = table_m_width(ctx, box, &largest_min_width);
 	}
 	return r_min;
 }
@@ -1008,9 +1041,9 @@ static float largest_max_width(fz_context *ctx, fz_html_box *box)
 		if (max > r_max)
 			r_max = max;
 	}
-	else
+	else if (box->type == BOX_TABLE)
 	{
-		// TODO: nested TABLE
+		r_max = table_m_width(ctx, box, &largest_max_width);
 	}
 	return r_max;
 }
@@ -1101,6 +1134,73 @@ static void layout_table_row(fz_context *ctx, layout_data *ld, fz_html_box *row,
 	ld->restart = save_restart;
 }
 
+static void merge_table(fz_context *ctx, fz_html_box *box, int ncol)
+{
+	fz_html_box **merges;
+	fz_html_box *span;
+	fz_html_box *row, *cell;
+	int col;
+
+	span = NULL;
+	merges = fz_malloc_array(ctx, ncol, fz_html_box*);
+	int i = ncol;
+	while (i--) merges[i] = NULL;
+
+	fz_try(ctx)
+	{
+		for (row = box->down; row; row = row->next)
+		{
+			col = 0;
+			for (cell = row->down; cell; cell = cell->next)
+			{
+				if (cell->span && !strcmp(cell->span, "restart")) {
+					span = cell;
+				}
+				else if (cell->span && !strcmp(cell->span, "continue")) {
+					if (span) {
+						span->spanning = cell;
+						span = cell;
+					}
+					else
+						cell->spanning = NULL;
+				}
+				else {
+					if (span) {
+						span->spanning = NULL;
+						span = NULL;
+					}
+					cell->spanning = NULL;
+				}
+
+				if (cell->merge && !strcmp(cell->merge, "restart")) {
+					merges[col] = cell;
+				}
+				else if (cell->merge && !strcmp(cell->merge, "continue")) {
+					if (merges[col]) {
+						merges[col]->merging = cell;
+						merges[col] = cell;
+					}
+					else
+						cell->merging = NULL;
+				}
+				else {
+					if (merges[col]) {
+						merges[col]->merging = NULL;
+						merges[col] = NULL;
+					}
+					cell->merging = NULL;
+				}
+				cell->submerging = NULL;
+				col++;
+			}
+		}
+	}
+	fz_always(ctx)
+		fz_free(ctx, merges);
+	fz_catch(ctx)
+		fz_rethrow(ctx);
+}
+
 static void layout_table(fz_context *ctx, layout_data *ld, fz_html_box *box, fz_html_box *top)
 {
 	fz_html_box *row, *cell;
@@ -1118,6 +1218,9 @@ static void layout_table(fz_context *ctx, layout_data *ld, fz_html_box *box, fz_
 	float auto_w;
 
 	spacing = fz_from_css_number(box->style->border_spacing, box->s.layout.em, box->s.layout.w, 0);
+
+	if (box->style->border_collapse)
+		spacing = 0;
 
 	if (restart)
 	{
@@ -1298,6 +1401,7 @@ static void layout_table(fz_context *ctx, layout_data *ld, fz_html_box *box, fz_
 			box->s.layout.b = row->s.layout.b + spacing;
 		}
 		exit:;
+		merge_table(ctx, box, ncol);
 	}
 	fz_always(ctx)
 		fz_free(ctx, colw);
@@ -1529,6 +1633,14 @@ static void layout_update_styles(fz_context *ctx, fz_html_box *box, fz_html_box 
 			border[R] = style->border_style_1 ? fz_from_css_number(style->border_width[R], em, top_w, 0) : 0;
 			border[B] = style->border_style_2 ? fz_from_css_number(style->border_width[B], em, top_w, 0) : 0;
 			border[L] = style->border_style_3 ? fz_from_css_number(style->border_width[L], em, top_w, 0) : 0;
+
+			if (box->style->border_collapse && box->type == BOX_TABLE_CELL)
+			{
+				border[T] = 0;
+				if (!box->next) border[R] = 0;
+				if (!box->up->next) border[B] = 0;
+				border[L] = 0;
+			}
 
 			// TODO: BLOCK nested inside TABLE!
 			if (box->type == BOX_BLOCK || box->type == BOX_TABLE)
@@ -1994,8 +2106,20 @@ static int draw_flow_box(fz_context *ctx, fz_html_box *box, float page_top, floa
 				}
 				if (style->visibility == V_VISIBLE)
 				{
-					fz_matrix itm = fz_pre_translate(ctm, node->x, node->y - page_top);
+					int x = node->x, y = node->y - page_top;
+					if (node->rotate_angle % 360 == 90) {
+						x += node->w;
+					}
+					else if (node->rotate_angle % 360 == 180) {
+						x += node->w;
+						y += node->h;
+					}
+					else if (node->rotate_angle % 360 == 270) {
+						y += node->h;
+					}
+					fz_matrix itm = fz_pre_translate(ctm, x, y);
 					itm = fz_pre_scale(itm, node->w, node->h);
+					itm = fz_pre_rotate(itm, node->rotate_angle);
 					fz_fill_image(ctx, dev, node->content.image, itm, 1, fz_default_color_params);
 				}
 			}
@@ -2026,13 +2150,23 @@ static int draw_flow_box(fz_context *ctx, fz_html_box *box, float page_top, floa
 	return restartable_ended;
 }
 
-static void draw_rect(fz_context *ctx, fz_device *dev, fz_matrix ctm, float page_top, fz_css_color color, float x0, float y0, float x1, float y1)
+static void draw_rect(fz_context *ctx, fz_device *dev, fz_matrix ctm, float page_top, fz_css_color color, float x0, float y0, float x1, float y1, float page_bot)
 {
 	if (color.a > 0)
 	{
 		float rgb[3];
 
 		fz_path *path = fz_new_path(ctx);
+
+		// do not draw outside of page layout
+		if (y0 < page_top) {
+			y0 = page_top;
+			if (y1 <= page_top) y1 = y0 + 1;
+		}
+		if (y1 > page_bot) {
+			y1 = page_bot;
+			if (y0 >= page_top) y0 = y1 - 1;
+		}
 
 		fz_moveto(ctx, path, x0, y0 - page_top);
 		fz_lineto(ctx, path, x1, y0 - page_top);
@@ -2249,24 +2383,236 @@ static int draw_box(fz_context *ctx, fz_html_box *box, float page_top, float pag
 	return ret;
 }
 
-static void
-do_borders(fz_context *ctx, fz_device *dev, fz_matrix ctm, float page_top, fz_html_box *box, int suppress)
+// calculate spanning right
+static float merge_x(fz_html_box *box, float x1, int *r)
+{
+	fz_html_box *spanning = box->spanning;
+	while (spanning) {
+		if (!spanning->spanning) {
+			float *padding2 = spanning->u.block.padding;
+			float x2 = spanning->s.layout.x + spanning->s.layout.w + padding2[R];
+			if (!spanning->next) *r = R;
+			return x2;
+		}
+		spanning = spanning->spanning;
+	}
+	return x1;
+}
+
+static int box_run_bot(fz_html_box *box, float page_bot, float *y2) {
+	float *padding = box->u.block.padding;
+	float y = box->s.layout.b + padding[B];
+	if (y2) *y2 = y;
+	if (y > page_bot)
+		return 1;
+	return 0;
+}
+
+// calculate merging bottom
+static float merge_y(fz_html_box *box, float y1, float page_bot, int *b)
+{
+	fz_html_box *merging = box->merging;
+	while (merging) {
+		float y2;
+		if (box_run_bot(merging, page_bot, &y2)) {
+			*b = B;
+			merging->submerging = box;
+			break;
+		}
+		y1 = y2;
+		merging->submerging = NULL;
+		if (!merging->up->next){
+			*b = B;
+		}
+		else if (!merging->merging){
+			fz_html_box *sibling = merging->up->next->down;
+			if (sibling) {
+				if (box_run_bot(sibling, page_bot, NULL)) {
+					*b = B;
+					break;
+				}
+			}
+		}
+		merging = merging->merging;
+	}
+	return y1;
+}
+
+/**
+ *	scalculate span and menge area
+ *
+ *	span restart / merge restart 		<-- 	span continue
+ *
+ *				↑ ↑ ↑
+ *
+ *	span restart / merge continue 		<-- 	span continue
+ *
+ */
+static void size_span(fz_html_box *box, float page_bot, float *x1, float *y1)
 {
 	float *border = box->u.block.border;
-	float *padding = box->u.block.padding;
-	float x0 = box->s.layout.x - padding[L];
-	float y0 = box->s.layout.y - padding[T];
-	float x1 = box->s.layout.x + box->s.layout.w + padding[R];
-	float y1 = box->s.layout.b + padding[B];
+	if (box->span && !strcmp(box->span, "restart")) {
+		int r = 0;
+		*x1 = merge_x(box, *x1, &r);
+		if (box->style->border_collapse) {
+			if (r) border[R] = 0;
+		}
+	}
+	if (box->merge && !strcmp(box->merge, "restart")) {
+		int b = 0;
+		*y1 = merge_y(box, *y1, page_bot, &b);
+		if (box->style->border_collapse) {
+			if (b) border[B] = 0;
+		}
+	}
+	else if (box->merge && !strcmp(box->merge, "continue")) {
+		// merging cross page booundry
+		if (box->submerging) {
+			int b = 0;
+			*y1 = merge_y(box, *y1, page_bot, &b);
+			if (box->style->border_collapse) {
+				if (b) border[B] = 0;
+			}
+		}
+	}
+	else {
+		// last row of split
+		if (box->up->next) {
+			fz_html_box *sibling = box->up->next->down;
+			if (sibling) {
+				if (box_run_bot(sibling, page_bot, NULL)) {
+					if (box->style->border_collapse) {
+						border[B] = 0;
+					}
+				}
+			}
+		}
+	}
+}
+
+static float get_cell_b(fz_html_box *table, float page_top, float page_bot, fz_html_restarter *restart)
+{
+	float cellb = 0;
+	fz_html_box *row, *cell;
+	int restart_start;
+	int skipping;
+
+	for (row = table->down; row; row = row->next)
+	{
+		if (restart && restart->end == row)
+			break;
+
+		float y0 = row->s.layout.y;
+		float y1 = row->s.layout.b;
+		if (y0 > page_bot || y1 < page_top)
+			continue;
+
+		restart_start = 0;
+		if (restart)
+		{
+			if (restart->start == row)
+				restart_start = 1;
+			if (restart->end == row)
+				break;
+		}
+
+		if (restart && restart->end == row)
+			break;
+
+		for (cell = row->down; cell; cell = cell->next)
+		{
+			if (restart && restart->end == cell)
+				return cellb;
+
+			float *padding = cell->u.block.padding;
+			y0 = cell->s.layout.y - padding[T];
+			y1 = cell->s.layout.b + padding[B];
+			if (y0 >= page_bot || y1 <= page_top)
+				continue;
+
+			restart_start = 0;
+			if (restart)
+			{
+				if (restart->start == cell)
+					restart_start = 1;
+				if (restart->end == cell)
+					return cellb;
+			}
+
+			if (restart && restart->end == cell)
+				return cellb;
+
+			skipping = (restart && restart_start != 1);
+			if (!skipping) {
+				if (y1 > cellb) cellb = y1;
+			}
+		}
+	}
+	return cellb;
+}
+
+static void
+do_borders(fz_context *ctx, fz_device *dev, fz_matrix ctm, float page_top, fz_html_box *box, int suppress, float page_bot, float cellb, float x0, float y0, float x1, float y1)
+{
+	float *border = box->u.block.border;
+
+	if (box->type == BOX_TABLE_CELL) {
+		if (box->span && !strcmp(box->span, "continue")) {
+			// span never cross page boundry, not display
+			return;
+		}
+		if (box->merge && !strcmp(box->merge, "continue")) {
+			// if merging cross page booundry
+			if (!box->submerging) {
+				return;
+			}
+		}
+	}
+	if (box->type == BOX_TABLE) {
+		if (cellb == 0) return;
+		if (y1 > page_bot) y1 = cellb;
+	}
 
 	if (border[T] > 0 && !(suppress & (1<<T)))
-		draw_rect(ctx, dev, ctm, page_top, box->style->border_color[T], x0 - border[L], y0 - border[T], x1 + border[R], y0);
+		draw_rect(ctx, dev, ctm, page_top, box->style->border_color[T], x0 - border[L], y0 - border[T], x1 + border[R], y0, page_bot);
 	if (border[R] > 0 && !(suppress & (1<<R)))
-		draw_rect(ctx, dev, ctm, page_top, box->style->border_color[R], x1, y0 - border[T], x1 + border[R], y1 + border[B]);
+		draw_rect(ctx, dev, ctm, page_top, box->style->border_color[R], x1, y0 - border[T], x1 + border[R], y1 + border[B], page_bot);
 	if (border[B] > 0 && !(suppress & (1<<B)))
-		draw_rect(ctx, dev, ctm, page_top, box->style->border_color[B], x0 - border[L], y1, x1 + border[R], y1 + border[B]);
+		draw_rect(ctx, dev, ctm, page_top, box->style->border_color[B], x0 - border[L], y1, x1 + border[R], y1 + border[B], page_bot);
 	if (border[L] > 0 && !(suppress & (1<<L)))
-		draw_rect(ctx, dev, ctm, page_top, box->style->border_color[L], x0 - border[L], y0 - border[T], x0, y1 + border[B]);
+		draw_rect(ctx, dev, ctm, page_top, box->style->border_color[L], x0 - border[L], y0 - border[T], x0, y1 + border[B], page_bot);
+}
+
+static void
+do_rect(fz_context *ctx, fz_device *dev, fz_matrix ctm, float page_top, fz_html_box *box, float page_bot, float cellb, float x0, float y0, float x1, float y1)
+{
+	fz_css_color background_color = box->style->background_color;
+
+	if (box->type == BOX_TABLE_CELL) {
+		if (box->span && !strcmp(box->span, "continue")) {
+			// span never cross page boundry, not display
+			return;
+		}
+		if (box->merge && !strcmp(box->merge, "continue")) {
+			// if merging cross page booundry
+			if (!box->submerging) {
+				return;
+			}
+			else {
+				fz_html_box *submerging = box->submerging;
+				while (submerging->submerging)
+					submerging = submerging->submerging;
+				background_color = submerging->style->background_color;
+			}
+		}
+	}
+	if (box->type == BOX_TABLE) {
+		if (cellb == 0) return;
+		if (y1 > page_bot) y1 = cellb;
+	}
+
+	draw_rect(ctx, dev, ctm, page_top, background_color, x0, y0, x1, y1, page_bot);
+
 }
 
 static int draw_block_box(fz_context *ctx, fz_html_box *box, float page_top, float page_bot, fz_device *dev, fz_matrix ctm, hb_buffer_t *hb_buf, fz_html_restarter *restart)
@@ -2278,13 +2624,16 @@ static int draw_block_box(fz_context *ctx, fz_html_box *box, float page_top, flo
 	int stopped = 0;
 	int skipping;
 
+	// max cell b
+	float cellb = 0;
+
 	assert(fz_html_box_has_boxes(box));
 	x0 = box->s.layout.x - padding[L];
 	y0 = box->s.layout.y - padding[T];
 	x1 = box->s.layout.x + box->s.layout.w + padding[R];
 	y1 = box->s.layout.b + padding[B];
 
-	if (y0 > page_bot || y1 < page_top)
+	if (y0 >= page_bot || y1 <= page_top)
 		return 0;
 
 	/* If we're skipping, is this the place we should restart? */
@@ -2305,20 +2654,28 @@ static int draw_block_box(fz_context *ctx, fz_html_box *box, float page_top, flo
 	/* Only draw the content if it's visible */
 	if (box->style->visibility == V_VISIBLE)
 	{
+		if (box->type == BOX_TABLE) {
+			cellb = get_cell_b(box, page_top, page_bot, restart);
+		}
+
+		if (box->type == BOX_TABLE_CELL) {
+			size_span(box, page_bot, &x1, &y1);
+		}
+
 		int suppress;
 
 		/* We draw the background rectangle regardless if we are skipping or not, because
 		 * we might find the end-of-skip point inside this box. If there is no content
 		 * then the box height will be 0, so nothing will be drawn. */
 		if (y1 > y0)
-			draw_rect(ctx, dev, ctm, page_top, box->style->background_color, x0, y0, x1, y1);
+			do_rect(ctx, dev, ctm, page_top, box, page_bot, cellb, x0, y0, x1, y1);
 
 		if (!skipping)
 		{
 			/* Draw a selection of borders. */
 			/* If we are restarting, don't do the bottom one yet. */
 			suppress = restart ? (1<<B) : 0;
-			do_borders(ctx, dev, ctm, page_top, box, suppress);
+			do_borders(ctx, dev, ctm, page_top, box, suppress, page_bot, cellb, x0, y0, x1, y1);
 
 			if (box->list_item)
 				draw_list_mark(ctx, box, page_top, page_bot, dev, ctm, box->list_item);
@@ -2353,7 +2710,7 @@ static int draw_block_box(fz_context *ctx, fz_html_box *box, float page_top, flo
 		/* FIXME: background color? list mark is probably OK as we only want
 		 * it once. */
 
-		do_borders(ctx, dev, ctm, page_top, box, suppress);
+		do_borders(ctx, dev, ctm, page_top, box, suppress, page_bot, cellb, x0, y0, x1, y1);
 	}
 
 	return stopped;
@@ -2432,7 +2789,7 @@ fz_draw_html(fz_context *ctx, fz_device *dev, fz_matrix ctm, fz_html *html, int 
 	draw_rect(ctx, dev, ctm, 0, html->tree.root->style->background_color,
 			0, 0,
 			html->page_w + html->page_margin[L] + html->page_margin[R],
-			html->page_h + html->page_margin[T] + html->page_margin[B]);
+			html->page_h + html->page_margin[T] + html->page_margin[B], html->page_h);
 
 	ctm = fz_pre_translate(ctm, html->page_margin[L], html->page_margin[T]);
 

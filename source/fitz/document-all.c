@@ -35,6 +35,7 @@ extern fz_document_handler epub_document_handler;
 extern fz_document_handler txt_document_handler;
 extern fz_document_handler office_document_handler;
 extern fz_document_handler gz_document_handler;
+extern fz_document_handler zip_document_handler;
 
 void fz_register_document_handlers(fz_context *ctx)
 {
@@ -65,4 +66,5 @@ void fz_register_document_handlers(fz_context *ctx)
 	fz_register_document_handler(ctx, &epub_document_handler);
 #endif /* FZ_ENABLE_EPUB */
 	fz_register_document_handler(ctx, &gz_document_handler);
+	fz_register_document_handler(ctx, &zip_document_handler);
 }
