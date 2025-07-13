@@ -1153,6 +1153,7 @@ static void merge_table(fz_context *ctx, fz_html_box *box, int ncol)
 			col = 0;
 			for (cell = row->down; cell; cell = cell->next)
 			{
+				cell->spanning = NULL;
 				if (cell->span && !strcmp(cell->span, "restart")) {
 					span = cell;
 				}
@@ -1161,36 +1162,31 @@ static void merge_table(fz_context *ctx, fz_html_box *box, int ncol)
 						span->spanning = cell;
 						span = cell;
 					}
-					else
-						cell->spanning = NULL;
 				}
 				else {
 					if (span) {
-						span->spanning = NULL;
 						span = NULL;
 					}
-					cell->spanning = NULL;
 				}
 
+				cell->submerging = NULL;
+				cell->merging = NULL;
 				if (cell->merge && !strcmp(cell->merge, "restart")) {
+					cell->submerging = cell;
 					merges[col] = cell;
 				}
 				else if (cell->merge && !strcmp(cell->merge, "continue")) {
 					if (merges[col]) {
+						cell->submerging = merges[col]->submerging;
 						merges[col]->merging = cell;
 						merges[col] = cell;
 					}
-					else
-						cell->merging = NULL;
 				}
 				else {
 					if (merges[col]) {
-						merges[col]->merging = NULL;
 						merges[col] = NULL;
 					}
-					cell->merging = NULL;
 				}
-				cell->submerging = NULL;
 				col++;
 			}
 		}
@@ -2165,7 +2161,7 @@ static void draw_rect(fz_context *ctx, fz_device *dev, fz_matrix ctm, float page
 		}
 		if (y1 > page_bot) {
 			y1 = page_bot;
-			if (y0 >= page_top) y0 = y1 - 1;
+			if (y0 >= page_bot) y0 = y1 - 1;
 		}
 
 		fz_moveto(ctx, path, x0, y0 - page_top);
@@ -2416,11 +2412,9 @@ static float merge_y(fz_html_box *box, float y1, float page_bot, int *b)
 		float y2;
 		if (box_run_bot(merging, page_bot, &y2)) {
 			*b = B;
-			merging->submerging = box;
 			break;
 		}
 		y1 = y2;
-		merging->submerging = NULL;
 		if (!merging->up->next){
 			*b = B;
 		}
@@ -2448,7 +2442,7 @@ static float merge_y(fz_html_box *box, float y1, float page_bot, int *b)
  *	span restart / merge continue 		<-- 	span continue
  *
  */
-static void size_span(fz_html_box *box, float page_bot, float *x1, float *y1)
+static void size_span(fz_html_box *box, float page_bot, float *x1, float *y1, int top)
 {
 	float *border = box->u.block.border;
 	if (box->span && !strcmp(box->span, "restart")) {
@@ -2467,7 +2461,7 @@ static void size_span(fz_html_box *box, float page_bot, float *x1, float *y1)
 	}
 	else if (box->merge && !strcmp(box->merge, "continue")) {
 		// merging cross page booundry
-		if (box->submerging) {
+		if (top) {
 			int b = 0;
 			*y1 = merge_y(box, *y1, page_bot, &b);
 			if (box->style->border_collapse) {
@@ -2552,7 +2546,7 @@ static float get_cell_b(fz_html_box *table, float page_top, float page_bot, fz_h
 }
 
 static void
-do_borders(fz_context *ctx, fz_device *dev, fz_matrix ctm, float page_top, fz_html_box *box, int suppress, float page_bot, float cellb, float x0, float y0, float x1, float y1)
+do_borders(fz_context *ctx, fz_device *dev, fz_matrix ctm, float page_top, fz_html_box *box, int suppress, float page_bot, float cellb, float x0, float y0, float x1, float y1, int top)
 {
 	float *border = box->u.block.border;
 
@@ -2563,7 +2557,7 @@ do_borders(fz_context *ctx, fz_device *dev, fz_matrix ctm, float page_top, fz_ht
 		}
 		if (box->merge && !strcmp(box->merge, "continue")) {
 			// if merging cross page booundry
-			if (!box->submerging) {
+			if (!top) {
 				return;
 			}
 		}
@@ -2584,7 +2578,7 @@ do_borders(fz_context *ctx, fz_device *dev, fz_matrix ctm, float page_top, fz_ht
 }
 
 static void
-do_rect(fz_context *ctx, fz_device *dev, fz_matrix ctm, float page_top, fz_html_box *box, float page_bot, float cellb, float x0, float y0, float x1, float y1)
+do_rect(fz_context *ctx, fz_device *dev, fz_matrix ctm, float page_top, fz_html_box *box, float page_bot, float cellb, float x0, float y0, float x1, float y1, int top)
 {
 	fz_css_color background_color = box->style->background_color;
 
@@ -2595,13 +2589,11 @@ do_rect(fz_context *ctx, fz_device *dev, fz_matrix ctm, float page_top, fz_html_
 		}
 		if (box->merge && !strcmp(box->merge, "continue")) {
 			// if merging cross page booundry
-			if (!box->submerging) {
+			if (!top) {
 				return;
 			}
 			else {
 				fz_html_box *submerging = box->submerging;
-				while (submerging->submerging)
-					submerging = submerging->submerging;
 				background_color = submerging->style->background_color;
 			}
 		}
@@ -2612,7 +2604,6 @@ do_rect(fz_context *ctx, fz_device *dev, fz_matrix ctm, float page_top, fz_html_
 	}
 
 	draw_rect(ctx, dev, ctm, page_top, background_color, x0, y0, x1, y1, page_bot);
-
 }
 
 static int draw_block_box(fz_context *ctx, fz_html_box *box, float page_top, float page_bot, fz_device *dev, fz_matrix ctm, hb_buffer_t *hb_buf, fz_html_restarter *restart)
@@ -2651,6 +2642,14 @@ static int draw_block_box(fz_context *ctx, fz_html_box *box, float page_top, flo
 	/* Are we skipping? */
 	skipping = (restart && restart->start != NULL);
 
+	int top = 0;
+	if (box->type == BOX_TABLE_CELL) {
+		float *border = box->u.block.border;
+		float *margin = box->u.block.margin;
+		float y = y0 - border[T] - margin[T];
+		if (y == page_top) top = 1;
+	}
+
 	/* Only draw the content if it's visible */
 	if (box->style->visibility == V_VISIBLE)
 	{
@@ -2659,7 +2658,7 @@ static int draw_block_box(fz_context *ctx, fz_html_box *box, float page_top, flo
 		}
 
 		if (box->type == BOX_TABLE_CELL) {
-			size_span(box, page_bot, &x1, &y1);
+			size_span(box, page_bot, &x1, &y1, top);
 		}
 
 		int suppress;
@@ -2668,14 +2667,14 @@ static int draw_block_box(fz_context *ctx, fz_html_box *box, float page_top, flo
 		 * we might find the end-of-skip point inside this box. If there is no content
 		 * then the box height will be 0, so nothing will be drawn. */
 		if (y1 > y0)
-			do_rect(ctx, dev, ctm, page_top, box, page_bot, cellb, x0, y0, x1, y1);
+			do_rect(ctx, dev, ctm, page_top, box, page_bot, cellb, x0, y0, x1, y1, top);
 
 		if (!skipping)
 		{
 			/* Draw a selection of borders. */
 			/* If we are restarting, don't do the bottom one yet. */
 			suppress = restart ? (1<<B) : 0;
-			do_borders(ctx, dev, ctm, page_top, box, suppress, page_bot, cellb, x0, y0, x1, y1);
+			do_borders(ctx, dev, ctm, page_top, box, suppress, page_bot, cellb, x0, y0, x1, y1, top);
 
 			if (box->list_item)
 				draw_list_mark(ctx, box, page_top, page_bot, dev, ctm, box->list_item);
@@ -2710,7 +2709,7 @@ static int draw_block_box(fz_context *ctx, fz_html_box *box, float page_top, flo
 		/* FIXME: background color? list mark is probably OK as we only want
 		 * it once. */
 
-		do_borders(ctx, dev, ctm, page_top, box, suppress, page_bot, cellb, x0, y0, x1, y1);
+		do_borders(ctx, dev, ctm, page_top, box, suppress, page_bot, cellb, x0, y0, x1, y1, top);
 	}
 
 	return stopped;
