@@ -353,7 +353,7 @@ cbz_recognize_doc_content(fz_context *ctx, const fz_document_handler *handler, f
 		/* If it's an archive, and we can find at least one plausible page
 		 * then we can open it as a cbz. */
 		count = fz_count_archive_entries(ctx, arch);
-		for (i = 0; i < count && ret == 0; i++)
+		for (i = 0; i < count; i++)
 		{
 			const char *name = fz_list_archive_entry(ctx, arch, i);
 			const char *ext;
@@ -366,12 +366,14 @@ cbz_recognize_doc_content(fz_context *ctx, const fz_document_handler *handler, f
 				{
 					if (!fz_strcasecmp(ext, cbz_ext_list[k]))
 					{
-						ret = 25;
+						ret++;
 						break;
 					}
 				}
 			}
 		}
+
+		ret = ret * 100 / count;
 	}
 	fz_always(ctx)
 		fz_drop_archive(ctx, arch);
