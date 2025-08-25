@@ -116,4 +116,5 @@ public final class AndroidDrawDevice extends NativeDevice
 	}
 
 	public native final void invertLuminance();
+	public native final void tint(int black, int white);
 }

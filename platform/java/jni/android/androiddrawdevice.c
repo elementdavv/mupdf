@@ -174,6 +174,28 @@ FUN(android_AndroidDrawDevice_invertLuminance)(JNIEnv *env, jobject self)
 		jni_rethrow_void(env, ctx);
 }
 
+JNIEXPORT void JNICALL
+FUN(android_AndroidDrawDevice_tint)(JNIEnv *env, jobject self, jint black, jint white)
+{
+	fz_context *ctx = get_context(env);
+	fz_device *dev = from_Device(env, self);
+	NativeDeviceInfo *info;
+	int err;
+
+	if (!ctx || !dev) return;
+
+	info = lockNativeDevice(env, self, &err);
+	if (err)
+		return;
+
+	fz_try(ctx)
+		fz_tint_pixmap(ctx, info->pixmap, black, white);
+	fz_always(ctx)
+		unlockNativeDevice(env, info);
+	fz_catch(ctx)
+		jni_rethrow_void(env, ctx);
+}
+
 JNIEXPORT jlong JNICALL
 FUN(android_AndroidDrawDevice_newNative)(JNIEnv *env, jclass self, jobject jbitmap, jint xOrigin, jint yOrigin, jint pX0, jint pY0, jint pX1, jint pY1, jboolean clear)
 {

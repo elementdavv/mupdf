@@ -1,13 +1,25 @@
 EDITS:
 
+2025/8/25 1.24.9.6
+add androiddrawdevice tint function for java
+
+2025/8/23 1.24.9.5
+add zip type cbz support
+
+2025/7/13 1.24.9.4
+fix a bug which cause missing left and right border of a table cell occupying a package
+
 2025/6/23
 add zip package support
 html documents add table colspan/rowspan, border-collapse and nested table support
 office documents add image and table support in which image rotation, table colspan/rowspan, border-collapse and nested tables available
 fix txt mimetype error
 
-2024/10/19
+2024/10/19 1.24.9.2
 add bbox support for all documents
+
+2024/9/29 1.24.9.1
+add bbox support for pdf
 
 
 ABOUT
