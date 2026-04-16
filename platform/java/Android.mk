@@ -41,6 +41,15 @@ USE_LEPTONICA := yes
 endif
 endif
 
+# --- import libarchive shared library ---
+ifdef LIBARCHIVE_DIR
+include $(CLEAR_VARS)
+LOCAL_MODULE += libarchive
+LIBARCHIVE_SRC := $(subst buildType,$(APP_OPTIM),$(LIBARCHIVE_SRC))
+LOCAL_SRC_FILES += $(patsubst %,$(LIBARCHIVE_DIR)/%/$(TARGET_ARCH_ABI)/libarchive.so,$(LIBARCHIVE_SRC))
+include $(PREBUILT_SHARED_LIBRARY)
+endif
+
 # --- Build a local static library for core mupdf ---
 
 include $(CLEAR_VARS)
@@ -56,6 +65,10 @@ LOCAL_CFLAGS += -DTOFU_CJK
 LOCAL_CFLAGS += -DTOFU_SIL
 LOCAL_CFLAGS += -DAA_BITS=8
 
+ifdef LIBARCHIVE_DIR
+LOCAL_CFLAGS += -DHAVE_LIBARCHIVE
+endif
+
 LOCAL_C_INCLUDES += $(patsubst -I%,$(MUPDF_PATH)/%,$(filter -I%,$(FREETYPE_CFLAGS)))
 LOCAL_C_INCLUDES += $(patsubst -I%,$(MUPDF_PATH)/%,$(filter -I%,$(GUMBO_CFLAGS)))
 LOCAL_C_INCLUDES += $(patsubst -I%,$(MUPDF_PATH)/%,$(filter -I%,$(HARFBUZZ_CFLAGS)))
@@ -70,6 +83,9 @@ LOCAL_C_INCLUDES += $(patsubst -I%,$(MUPDF_PATH)/%,$(filter -I%,$(TESSERACT_CFLA
 endif
 ifdef USE_LEPTONICA
 LOCAL_C_INCLUDES += $(patsubst -I%,$(MUPDF_PATH)/%,$(filter -I%,$(LEPTONICA_CFLAGS)))
+endif
+ifdef LIBARCHIVE_DIR
+LOCAL_C_INCLUDES += $(patsubst %,$(LIBARCHIVE_DIR)/%,$(LIBARCHIVE_CFLAGS))
 endif
 
 LOCAL_C_INCLUDES += $(patsubst -I%,$(MUPDF_PATH)/%,$(filter -I%,$(EXTRACT_CFLAGS)))
@@ -106,6 +122,10 @@ LOCAL_SRC_FILES += $(wildcard $(MUPDF_PATH)/source/helpers/pkcs7/*.c)
 LOCAL_SRC_FILES += $(wildcard $(MUPDF_PATH)/generated/resources/fonts/urw/*.c)
 
 LOCAL_CFLAGS += $(MUPDF_EXTRA_CFLAGS)
+
+ifdef LIBARCHIVE_DIR
+LOCAL_SHARED_LIBRARIES := libarchive
+endif
 
 include $(BUILD_STATIC_LIBRARY)
 
@@ -185,10 +205,25 @@ LOCAL_C_INCLUDES := $(MUPDF_PATH)/include
 LOCAL_SRC_FILES += $(patsubst %,$(MUPDF_PATH)/%,$(TESSERACT_SRC))
 LOCAL_SRC_FILES += $(MUPDF_PATH)/source/fitz/tessocr.cpp
 LOCAL_C_INCLUDES += $(patsubst -I%,$(MUPDF_PATH)/%,$(filter -I%,$(TESSERACT_CFLAGS) $(TESSERACT_BUILD_CFLAGS)))
+
+ifdef LIBARCHIVE_DIR
+LOCAL_C_INCLUDES += $(patsubst %,$(LIBARCHIVE_DIR)/%,$(LIBARCHIVE_CFLAGS))
+endif
+
 LOCAL_CFLAGS += $(filter-out -I%,$(TESSERACT_CFLAGS) $(TESSERACT_BUILD_CFLAGS))
 LOCAL_CFLAGS += -Wno-sign-compare
 LOCAL_CFLAGS += $(MUPDF_EXTRA_CFLAGS)
+
+ifdef LIBARCHIVE_DIR
+LOCAL_CFLAGS += -DHAVE_LIBARCHIVE
+endif
+
 LOCAL_CPP_FEATURES := exceptions
+
+ifdef LIBARCHIVE_DIR
+LOCAL_SHARED_LIBRARIES := libarchive
+endif
+
 include $(BUILD_STATIC_LIBRARY)
 
 endif
