@@ -315,6 +315,40 @@ fz_archive *fz_open_zip_archive(fz_context *ctx, const char *path);
 fz_archive *fz_open_zip_archive_with_stream(fz_context *ctx, fz_stream *file);
 
 /**
+	fz_archive: djvu implementation
+*/
+
+/**
+	Detect if stream object is a djvu archive.
+
+	Assumes that the stream object is seekable.
+*/
+int fz_is_djvu_archive(fz_context *ctx, fz_stream *file);
+
+/**
+	Open a djvu archive file.
+
+	An exception is thrown if the file is not a djvu archive as
+	indicated by the presence of a djvu signature.
+
+	filename: a path to a djvu archive file as it would be given to
+	open(2).
+*/
+fz_archive *fz_open_djvu_archive(fz_context *ctx, const char *filename);
+
+/**
+	Open a djvu archive stream.
+
+	Open an archive using a seekable stream object rather than
+	opening a file or directory on disk.
+
+	An exception is thrown if the stream is not a djvu archive as
+	indicated by the presence of a zip signature.
+
+*/
+fz_archive *fz_open_djvu_archive_with_stream(fz_context *ctx, fz_stream *file);
+
+/**
 	fz_zip_writer offers methods for creating and writing zip files.
 	It can be seen as the reverse of the fz_archive zip
 	implementation.

@@ -71,6 +71,9 @@ public class Context
 
 	public native static Version getVersion();
 
+	// set internal file path
+	public native static void setPrivatePath(String path);
+
 	public static class Version {
 		public String version;
 		public int major;

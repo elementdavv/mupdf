@@ -64,6 +64,7 @@ LOCAL_CFLAGS += -DTOFU_NOTO
 LOCAL_CFLAGS += -DTOFU_CJK
 LOCAL_CFLAGS += -DTOFU_SIL
 LOCAL_CFLAGS += -DAA_BITS=8
+LOCAL_CFLAGS += -DZIP_SUPPORT
 
 ifdef LIBARCHIVE_DIR
 LOCAL_CFLAGS += -DHAVE_LIBARCHIVE
@@ -89,6 +90,8 @@ LOCAL_C_INCLUDES += $(patsubst %,$(LIBARCHIVE_DIR)/%,$(LIBARCHIVE_CFLAGS))
 endif
 
 LOCAL_C_INCLUDES += $(patsubst -I%,$(MUPDF_PATH)/%,$(filter -I%,$(EXTRACT_CFLAGS)))
+LOCAL_C_INCLUDES += $(patsubst -I%,$(MUPDF_PATH)/%,$(filter -I%,$(LIBDJVU_CFLAGS)))
+LOCAL_C_INCLUDES += $(patsubst -I%,$(MUPDF_PATH)/%,$(filter -I%,$(LIBTIFF_CFLAGS)))
 
 LOCAL_CFLAGS += $(filter-out -I%,$(FREETYPE_CFLAGS))
 LOCAL_CFLAGS += $(filter-out -I%,$(GUMBO_CFLAGS))
@@ -122,10 +125,6 @@ LOCAL_SRC_FILES += $(wildcard $(MUPDF_PATH)/source/helpers/pkcs7/*.c)
 LOCAL_SRC_FILES += $(wildcard $(MUPDF_PATH)/generated/resources/fonts/urw/*.c)
 
 LOCAL_CFLAGS += $(MUPDF_EXTRA_CFLAGS)
-
-ifdef LIBARCHIVE_DIR
-LOCAL_SHARED_LIBRARIES := libarchive
-endif
 
 include $(BUILD_STATIC_LIBRARY)
 
@@ -220,10 +219,6 @@ endif
 
 LOCAL_CPP_FEATURES := exceptions
 
-ifdef LIBARCHIVE_DIR
-LOCAL_SHARED_LIBRARIES := libarchive
-endif
-
 include $(BUILD_STATIC_LIBRARY)
 
 endif
@@ -249,6 +244,32 @@ LOCAL_MODULE += mupdf_thirdparty_extract
 LOCAL_SRC_FILES += $(patsubst %,$(MUPDF_PATH)/%,$(EXTRACT_SRC))
 LOCAL_C_INCLUDES += $(patsubst -I%,$(MUPDF_PATH)/%,$(filter -I%,$(EXTRACT_CFLAGS) $(EXTRACT_BUILD_CFLAGS)))
 LOCAL_CFLAGS += $(filter-out -I%,$(EXTRACT_CFLAGS) $(EXTRACT_BUILD_CFLAGS))
+LOCAL_CFLAGS += $(MUPDF_EXTRA_CFLAGS)
+include $(BUILD_STATIC_LIBRARY)
+
+# --- Build local static library for libdjvu ---
+include $(CLEAR_VARS)
+LOCAL_MODULE += mupdf_thirdparty_libdjvu
+LOCAL_SRC_FILES += $(patsubst %,$(MUPDF_PATH)/%,$(LIBDJVU_SRC))
+LOCAL_C_INCLUDES += $(patsubst -I%,$(MUPDF_PATH)/%,$(filter -I%,$(LIBDJVU_CFLAGS)))
+LOCAL_C_INCLUDES += $(patsubst -I%,$(MUPDF_PATH)/%,$(filter -I%,$(LIBJPEG_CFLAGS)))
+LOCAL_C_INCLUDES += $(patsubst -I%,$(MUPDF_PATH)/%,$(filter -I%,$(LIBICONV_EXPORT_C_INCLUDES)))
+LOCAL_CPPFLAGS += $(filter-out -I%,$(LIBDJVU_BUILD_CFLAGS))
+LOCAL_CPPFLAGS += $(MUPDF_EXTRA_CPPFLAGS)
+include $(BUILD_STATIC_LIBRARY)
+
+include $(CLEAR_VARS)
+LOCAL_MODULE += mupdf_thirdparty_libtiff
+LOCAL_SRC_FILES += $(patsubst %,$(MUPDF_PATH)/%,$(LIBTIFF_SRC))
+LOCAL_C_INCLUDES += $(patsubst -I%,$(MUPDF_PATH)/%,$(filter -I%,$(LIBTIFF_CFLAGS)))
+LOCAL_CFLAGS += $(MUPDF_EXTRA_CFLAGS)
+include $(BUILD_STATIC_LIBRARY)
+
+include $(CLEAR_VARS)
+LOCAL_MODULE += mupdf_thirdparty_libiconv
+LOCAL_SRC_FILES += $(patsubst %,$(MUPDF_PATH)/%,$(LIBICONV_SRC))
+LOCAL_C_INCLUDES += $(patsubst -I%,$(MUPDF_PATH)/%,$(filter -I%,$(LIBICONV_CFLAGS)))
+LOCAL_CFLAGS += $(filter-out -I%,$(LIBICONV_CFLAGS))
 LOCAL_CFLAGS += $(MUPDF_EXTRA_CFLAGS)
 include $(BUILD_STATIC_LIBRARY)
 
@@ -289,6 +310,13 @@ LOCAL_STATIC_LIBRARIES += mupdf_thirdparty_tesseract
 endif
 
 LOCAL_STATIC_LIBRARIES += mupdf_thirdparty_extract
+LOCAL_STATIC_LIBRARIES += mupdf_thirdparty_libdjvu
+LOCAL_STATIC_LIBRARIES += mupdf_thirdparty_libtiff
+LOCAL_STATIC_LIBRARIES += mupdf_thirdparty_libiconv
+
+ifdef LIBARCHIVE_DIR
+LOCAL_SHARED_LIBRARIES := libarchive
+endif
 
 LOCAL_LDLIBS += $(MUPDF_EXTRA_LDLIBS)
 LOCAL_LDLIBS += -ljnigraphics

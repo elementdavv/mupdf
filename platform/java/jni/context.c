@@ -24,6 +24,8 @@
 
 /* Put the fz_context in thread-local storage */
 
+#include <string.h>
+
 #ifdef _WIN32
 static CRITICAL_SECTION mutexes[FZ_LOCK_MAX];
 #else
@@ -330,4 +332,18 @@ FUN(Context_shrinkStore)(JNIEnv *env, jclass cls, jint percent)
 		jni_rethrow(env, ctx);
 
 	return success != 0;
+}
+
+JNIEXPORT void JNICALL
+FUN(Context_setPrivatePath)(JNIEnv *env, jclass cls, jstring path)
+{
+	fz_context *ctx = get_context(env);
+	const char *ppath = NULL;
+
+	if (path) {
+		ppath = (*env)->GetStringUTFChars(env, path, NULL);
+		strncpy(ctx->private_path, ppath, sizeof(ctx->private_path) - 1);
+		ctx->private_path[sizeof(ctx->private_path) - 1] = '\0';
+		(*env)->ReleaseStringUTFChars(env, path, ppath);
+	}
 }

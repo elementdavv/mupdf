@@ -195,10 +195,14 @@ fz_try_open_archive_with_stream(fz_context *ctx, fz_stream *file)
 	return NULL;
 }
 
+int try_open_archive = 1;
+
 fz_archive *
 fz_open_archive_with_stream(fz_context *ctx, fz_stream *file)
 {
+	try_open_archive = 0;
 	fz_archive *arch = fz_try_open_archive_with_stream(ctx, file);
+	try_open_archive = 1;
 	if (arch == NULL)
 		fz_throw(ctx, FZ_ERROR_FORMAT, "cannot recognize archive");
 	return arch;
@@ -526,6 +530,12 @@ const fz_archive_handler fz_cfb_archive_handler =
 	fz_open_cfb_archive_with_stream
 };
 
+const fz_archive_handler fz_djvu_archive_handler =
+{
+	fz_is_djvu_archive,
+	fz_open_djvu_archive_with_stream
+};
+
 void fz_new_archive_handler_context(fz_context *ctx)
 {
 	ctx->archive = fz_malloc_struct(ctx, fz_archive_handler_context);
@@ -537,6 +547,7 @@ void fz_new_archive_handler_context(fz_context *ctx)
 	fz_register_archive_handler(ctx, &fz_libarchive_archive_handler);
 #endif
 	fz_register_archive_handler(ctx, &fz_cfb_archive_handler);
+	fz_register_archive_handler(ctx, &fz_djvu_archive_handler);
 }
 
 fz_archive_handler_context *fz_keep_archive_handler_context(fz_context *ctx)
