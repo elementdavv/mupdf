@@ -17,9 +17,8 @@ extern int try_open_archive;
 typedef struct
 {
 	int idx;
-	int size;
 	char *name;
-	char *buf;
+	fz_buffer *ubuf;
 } djvu_entry;
 
 typedef struct
@@ -75,6 +74,7 @@ static void render(TIFF *tiff, ddjvu_page_t *page, int pageno)
   char white = (char)0xFF;
   int rowsize;
   int compression = COMPRESSION_NONE;
+  // 1-100 jpeg, 900 zip, 901 lzw, 1000 raw
   int flag_quality = 900;
 
   /* Process size specification */
@@ -82,17 +82,6 @@ static void render(TIFF *tiff, ddjvu_page_t *page, int pageno)
   prect.y = 0;
       prect.w = iw;
       prect.h = ih;
-
-  /* Process aspect ratio */
-  if (iw > 0 && ih > 0)
-    {
-      double dw = (double)iw / prect.w;
-      double dh = (double)ih / prect.h;
-      if (dw > dh)
-        prect.h = (int)(ih / dw);
-      else
-        prect.w = (int)(iw / dh);
-    }
 
   /* Process segment specification */
   rrect = prect;
@@ -102,10 +91,24 @@ static void render(TIFF *tiff, ddjvu_page_t *page, int pageno)
 
   /* Determine output pixel format and compression */
   style = DDJVU_FORMAT_RGB24;
+  if (type==DDJVU_PAGETYPE_BITONAL)
+    {
+      style = DDJVU_FORMAT_GREY8;
+      if ((int)prect.w == iw && (int)prect.h == ih)
+        style = DDJVU_FORMAT_MSBTOLSB;
+    }
 
-      compression = COMPRESSION_NONE;
+      if (flag_quality < 1000) {
+# ifdef CCITT_SUPPORT
+      if (style==DDJVU_FORMAT_MSBTOLSB
+          && TIFFFindCODEC(COMPRESSION_CCITT_T6))
+        compression = COMPRESSION_CCITT_T6;
+# endif
 # ifdef JPEG_SUPPORT
-      if (TIFFFindCODEC(COMPRESSION_JPEG))
+      if (compression == COMPRESSION_NONE
+          && style!=DDJVU_FORMAT_MSBTOLSB
+          && flag_quality>0 && flag_quality<=100
+          && TIFFFindCODEC(COMPRESSION_JPEG))
         compression = COMPRESSION_JPEG;
 # endif
 # ifdef ZIP_SUPPORT
@@ -131,21 +134,25 @@ static void render(TIFF *tiff, ddjvu_page_t *page, int pageno)
         /* This mediocre default produces the most portable tiff files. */
         compression = COMPRESSION_PACKBITS;
 # endif
+      }
 
-  if (! (fmt = ddjvu_format_create(style, 0, 0))) {
-	__android_log_print(ANDROID_LOG_INFO, "libmupdf", "Cannot determine pixel style for page %d", pageno);
-	return;
-	}
+  fmt = ddjvu_format_create(style, 0, 0);
   ddjvu_format_set_row_order(fmt, 1);
+  ddjvu_format_set_gamma(fmt, 2.2);
   /* Allocate buffer */
+  if (style == DDJVU_FORMAT_MSBTOLSB) {
+    white = 0x00;
+    rowsize = (rrect.w + 7) / 8;
+  } else if (style == DDJVU_FORMAT_GREY8)
+    rowsize = rrect.w;
+  else
     rowsize = rrect.w * 3;
   size_t bufsize = (size_t)rowsize * rrect.h;
 
-  if (bufsize / rowsize != rrect.h) {
-	__android_log_print(ANDROID_LOG_INFO, "libmupdf", "Integer overflow when allocating image buffer for page %d", pageno);
+  if (! (image = (char*)malloc(bufsize))) {
+	__android_log_print(ANDROID_LOG_INFO, "libmupdf", "Cannot allocate image buffer for page %d", pageno);
 	return;
-	}
-  image = (char*)malloc(bufsize);
+  }
 
   /* Render */
   if (! ddjvu_page_render(page, mode, &prect, &rrect, fmt, rowsize, image))
@@ -160,6 +167,9 @@ static void render(TIFF *tiff, ddjvu_page_t *page, int pageno)
         TIFFSetField(tiff, TIFFTAG_YRESOLUTION, (float)((dpi*prect.h+ih/2)/ih));
         TIFFSetField(tiff, TIFFTAG_PLANARCONFIG, PLANARCONFIG_CONTIG);
         TIFFSetField(tiff, TIFFTAG_ORIENTATION, ORIENTATION_TOPLEFT);
+# ifdef CCITT_SUPPORT
+        if (compression != COMPRESSION_CCITT_T6)
+# endif
 # ifdef JPEG_SUPPORT
           if (compression != COMPRESSION_JPEG)
 # endif
@@ -167,8 +177,19 @@ static void render(TIFF *tiff, ddjvu_page_t *page, int pageno)
             if (compression != COMPRESSION_DEFLATE)
 # endif
               TIFFSetField(tiff, TIFFTAG_ROWSPERSTRIP, (uint32)64);
-
+        if (style == DDJVU_FORMAT_MSBTOLSB) {
+          TIFFSetField(tiff, TIFFTAG_BITSPERSAMPLE, (uint16)1);
+          TIFFSetField(tiff, TIFFTAG_SAMPLESPERPIXEL, (uint16)1);
+          TIFFSetField(tiff, TIFFTAG_FILLORDER, FILLORDER_MSB2LSB);
+          TIFFSetField(tiff, TIFFTAG_COMPRESSION, compression);
+          TIFFSetField(tiff, TIFFTAG_PHOTOMETRIC, PHOTOMETRIC_MINISWHITE);
+        } else {
           TIFFSetField(tiff, TIFFTAG_BITSPERSAMPLE, (uint16)8);
+          if (style == DDJVU_FORMAT_GREY8) {
+            TIFFSetField(tiff, TIFFTAG_SAMPLESPERPIXEL, (uint16)1);
+            TIFFSetField(tiff, TIFFTAG_COMPRESSION, compression);
+            TIFFSetField(tiff, TIFFTAG_PHOTOMETRIC, PHOTOMETRIC_MINISBLACK);
+          } else {
             TIFFSetField(tiff, TIFFTAG_SAMPLESPERPIXEL, (uint16)3);
             TIFFSetField(tiff, TIFFTAG_COMPRESSION, compression);
 # ifdef JPEG_SUPPORT
@@ -179,7 +200,8 @@ static void render(TIFF *tiff, ddjvu_page_t *page, int pageno)
             } else
 # endif
               TIFFSetField(tiff, TIFFTAG_PHOTOMETRIC, PHOTOMETRIC_RGB);
-
+          }
+        }
         if (rowsize != TIFFScanlineSize(tiff)) {
 	       __android_log_print(ANDROID_LOG_INFO, "libmupdf", "internal error (%d!=%d)", rowsize, (int)TIFFScanlineSize(tiff));
 	       return;
@@ -256,22 +278,21 @@ static void ensure_djvu_entries(fz_context *ctx, fz_djvu_archive *djvu)
 		sprintf(name, "%d.tiff", i);
 		djvu->entries[i].name = fz_strdup(ctx, name);
 		djvu->entries[i].idx = i;
-		djvu->entries[i].size = 0;
-		djvu->entries[i].buf = 0;
+		djvu->entries[i].ubuf = 0;
 	}
 }
 
 static void retrive(fz_context *ctx, TIFF *tiff, fz_djvu_archive *djvu, int i)
 {
 	int size = TIFFGetFileSize(tiff);
-	djvu->entries[i].buf = fz_malloc(ctx, size);
+	char *data = fz_malloc(ctx, size);
 	TIFFSeekFile(tiff, 0, SEEK_SET);
 
-	if (TIFFReadFile(tiff, djvu->entries[i].buf, size) == size) {
-		djvu->entries[i].size = size;
+	if (TIFFReadFile(tiff, data, size) == size) {
+		djvu->entries[i].ubuf = fz_new_buffer_from_data(ctx, data, size);
 	}
 	else {
-		fz_free(ctx, djvu->entries[i].buf);
+		fz_free(ctx, data);
 	}
 }
 
@@ -320,14 +341,13 @@ static fz_buffer *read_djvu_entry(fz_context *ctx, fz_archive *arch, const char 
 	if (! ent)
 		return NULL;
 
-	if (ent->size == 0)
+	if (ent->ubuf == 0)
 		decodeEntry(ctx, djvu, ent->idx);
 
-	if (ent->size == 0)
+	if (ent->ubuf == 0)
 		return NULL;
 
-	fz_buffer *ubuf = fz_new_buffer_from_copied_data(ctx, ent->buf, ent->size);
-	return ubuf;
+	return ent->ubuf;
 }
 
 static fz_stream *open_djvu_entry(fz_context *ctx, fz_archive *arch, const char *name)
@@ -365,9 +385,7 @@ static void drop_djvu_archive(fz_context *ctx, fz_archive *arch)
 
 	for (int i = 0; i < djvu->count; ++i) {
 		fz_free(ctx, djvu->entries[i].name);
-
-		if (djvu->entries[i].size > 0)
-			fz_free(ctx, djvu->entries[i].buf);
+		fz_drop_buffer(ctx, djvu->entries[i].ubuf);
 	}
 	fz_free(ctx, djvu->entries);
 	fz_free(ctx, djvu->filename);

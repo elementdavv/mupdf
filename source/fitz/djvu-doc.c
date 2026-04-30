@@ -21,6 +21,7 @@
 // CA 94129, USA, for further information.
 
 #include "mupdf/fitz.h"
+#include "mupdf/fitz/buffer.h"
 
 #include <string.h>
 #include <stdlib.h>
@@ -182,6 +183,7 @@ djvu_load_page(fz_context *ctx, fz_document *doc_, int chapter, int number)
 	fz_try(ctx)
 	{
 		buf = fz_read_archive_entry(ctx, doc->arch, doc->page[number]);
+		fz_keep_buffer(ctx, buf);
 		page->image = fz_new_image_from_buffer(ctx, buf);
 	}
 	fz_always(ctx)
