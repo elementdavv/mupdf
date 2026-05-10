@@ -1,4 +1,4 @@
-// Copyright (C) 2004-2021 Artifex Software, Inc.
+// Copyright (C) 2026 Artifex Software, Inc.
 //
 // This file is part of MuPDF.
 //
@@ -21,18 +21,8 @@
 // CA 94129, USA, for further information.
 
 #include "mupdf/fitz.h"
-#include "mupdf/fitz/buffer.h"
-
-#include <string.h>
-#include <stdlib.h>
 
 #define DPI 72.0f
-
-static const char *djvu_ext_list[] = {
-	".tif",
-	".tiff",
-	NULL
-};
 
 typedef struct
 {
@@ -52,25 +42,13 @@ static void
 djvu_create_page_list(fz_context *ctx, djvu_document *doc)
 {
 	fz_archive *arch = doc->arch;
-	int i, k, count;
+	doc->page_count = fz_count_archive_entries(ctx, arch);
+	doc->page = fz_malloc_array(ctx, doc->page_count, const char *);
 
-	count = fz_count_archive_entries(ctx, arch);
-
-	doc->page_count = 0;
-	doc->page = fz_malloc_array(ctx, count, const char *);
-
-	for (i = 0; i < count; i++)
+	for (int i = 0; i < doc->page_count; i++)
 	{
 		const char *name = fz_list_archive_entry(ctx, arch, i);
-		const char *ext = name ? strrchr(name, '.') : NULL;
-		for (k = 0; djvu_ext_list[k]; k++)
-		{
-			if (ext && !fz_strcasecmp(ext, djvu_ext_list[k]))
-			{
-				doc->page[doc->page_count++] = name;
-				break;
-			}
-		}
+		doc->page[i] = name;
 	}
 }
 

@@ -1,18 +1,35 @@
+// Copyright (C) 2026 Artifex Software, Inc.
+//
+// This file is part of MuPDF.
+//
+// MuPDF is free software: you can redistribute it and/or modify it under the
+// terms of the GNU Affero General Public License as published by the Free
+// Software Foundation, either version 3 of the License, or (at your option)
+// any later version.
+//
+// MuPDF is distributed in the hope that it will be useful, but WITHOUT ANY
+// WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+// FOR A PARTICULAR PURPOSE. See the GNU Affero General Public License for more
+// details.
+//
+// You should have received a copy of the GNU Affero General Public License
+// along with MuPDF. If not, see <https://www.gnu.org/licenses/agpl-3.0.en.html>
+//
+// Alternative licensing terms are available from the licensor.
+// For commercial licensing, see <https://www.artifex.com/> or contact
+// Artifex Software, Inc., 39 Mesa Street, Suite 108A, San Francisco,
+// CA 94129, USA, for further information.
+
 #include "mupdf/fitz.h"
+#include <unistd.h>
 
-#include <stdio.h>
-#include <string.h>
-#include <limits.h>
 #include <android/log.h>
-
-#include "mupdf/fitz/buffer.h"
-#include "mupdf/fitz/context.h"
-#include "mupdf/fitz/stream.h"
 
 #include "ddjvuapi.h"
 #include "tiffiop.h"
 
 extern int try_open_archive;
+static char djvu_cache_path[1024] = {0};
 
 typedef struct
 {
@@ -26,11 +43,15 @@ typedef struct
 	fz_archive super;
 
 	int count;
-	const char *filename;
 	djvu_entry *entries;
 	ddjvu_context_t *dctx;
 	ddjvu_document_t *doc;
 } fz_djvu_archive;
+
+void fz_set_djvu_cache_path(const char *path)
+{
+	strncpy(djvu_cache_path, path, sizeof(djvu_cache_path) - 1);
+}
 
 void handle_ddjvu_messages(ddjvu_context_t *dctx, int wait)
 {
@@ -216,9 +237,6 @@ static void render(TIFF *tiff, ddjvu_page_t *page, int pageno)
 
 static void ensure_djvu_context(fz_context *ctx, fz_djvu_archive *djvu)
 {
-	char filename[256] = {0};
-	sprintf(filename, "%s/page.tiff", ctx->private_path);
-	djvu->filename = fz_strdup(ctx, filename);
 	djvu->doc = 0;
 
 	const char *programname = "net.timelegend.mupdf";
@@ -272,20 +290,25 @@ static void ensure_djvu_entries(fz_context *ctx, fz_djvu_archive *djvu)
 
 	djvu->count = ddjvu_document_get_pagenum(djvu->doc);
 	djvu->entries = fz_realloc_array(ctx, djvu->entries, djvu->count, djvu_entry);
+	int filenum = ddjvu_document_get_filenum(djvu->doc);
 
-	for (int i = 0; i < djvu->count; i++) {
-		char name[16] = {0};
-		sprintf(name, "%d.tiff", i);
-		djvu->entries[i].name = fz_strdup(ctx, name);
-		djvu->entries[i].idx = i;
-		djvu->entries[i].ubuf = 0;
+	for (int i = 0; i < filenum; i++) {
+		ddjvu_fileinfo_t finfo;
+		ddjvu_document_get_fileinfo(djvu->doc, i, &finfo);
+
+		if (finfo.type == 80) {		// [P]age
+			djvu->entries[finfo.pageno].idx = finfo.pageno;
+			const char *name = finfo.name ? finfo.name : (finfo.id ? finfo.id : finfo.title);
+			djvu->entries[finfo.pageno].name = fz_strdup(ctx, name);
+			djvu->entries[finfo.pageno].ubuf = 0;
+		}
 	}
 }
 
 static void retrive(fz_context *ctx, TIFF *tiff, fz_djvu_archive *djvu, int i)
 {
 	int size = TIFFGetFileSize(tiff);
-	char *data = fz_malloc(ctx, size);
+	unsigned char *data = fz_malloc(ctx, size);
 	TIFFSeekFile(tiff, 0, SEEK_SET);
 
 	if (TIFFReadFile(tiff, data, size) == size) {
@@ -315,12 +338,17 @@ static void decodeEntry(fz_context *ctx, fz_djvu_archive *djvu, int i)
 		if (ddjvu_page_decoding_error(page)) {
 			fz_throw(ctx, FZ_ERROR_GENERIC, "ddjvu_page_decoding_error: %d", i);
 		}
-		TIFF *tiff = TIFFOpen(djvu->filename, "w");
+		char filename[1024] = {0};
+		strcat(filename, djvu_cache_path);
+		strcat(filename, "/");
+		strcat(filename, djvu->entries[i].name);
+		TIFF *tiff = TIFFOpen(filename, "w");
 		render(tiff, page, i);
 		ddjvu_page_release(page);
 		TIFFFlush(tiff);
 		retrive(ctx, tiff, djvu, i);
 		TIFFClose(tiff);
+		unlink(filename);
 	}
 }
 
@@ -388,7 +416,6 @@ static void drop_djvu_archive(fz_context *ctx, fz_archive *arch)
 		fz_drop_buffer(ctx, djvu->entries[i].ubuf);
 	}
 	fz_free(ctx, djvu->entries);
-	fz_free(ctx, djvu->filename);
 	ddjvu_document_release(djvu->doc);
 	ddjvu_context_release(djvu->dctx);
 	djvu->doc = 0;

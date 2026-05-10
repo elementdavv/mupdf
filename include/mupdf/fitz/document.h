@@ -425,6 +425,12 @@ void fz_register_document_handler(fz_context *ctx, const fz_document_handler *ha
 void fz_register_document_handlers(fz_context *ctx);
 
 /**
+*   Pass private path to djvu decoder
+*   path: The path
+*/
+void fz_set_djvu_cache_path(const char *path);
+
+/**
 	Given a magic find a document handler that can handle a
 	document of this type.
 

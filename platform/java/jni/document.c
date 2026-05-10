@@ -560,6 +560,16 @@ FUN(Document_openNativeWithBuffer)(JNIEnv *env, jclass cls, jstring jmagic, jobj
 	return to_Document_safe_own(ctx, env, doc);
 }
 
+JNIEXPORT void JNICALL
+FUN(Document_setDjvuCachePath)(JNIEnv *env, jclass cls, jstring jpath)
+{
+	if (jpath) {
+		const char *path = (*env)->GetStringUTFChars(env, jpath, NULL);
+		fz_set_djvu_cache_path(path);
+		(*env)->ReleaseStringUTFChars(env, jpath, path);
+	}
+}
+
 JNIEXPORT jboolean JNICALL
 FUN(Document_recognize)(JNIEnv *env, jclass cls, jstring jmagic)
 {

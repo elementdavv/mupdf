@@ -84,6 +84,8 @@ public class Document
 		return openNativeWithStream(magic, stream, accelerator);
 	}
 
+	public native static void setDjvuCachePath(String path);
+
 	public static native boolean recognize(String magic);
 
 	public native boolean supportsAccelerator();
