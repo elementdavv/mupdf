@@ -560,6 +560,11 @@ enum
 fz_device *fz_new_draw_device(fz_context *ctx, fz_matrix transform, fz_pixmap *dest);
 
 /**
+	Get the pixmap inside draw device
+*/
+fz_pixmap *fz_draw_device_dest(fz_device *dev);
+
+/**
 	Create a device to draw on a pixmap.
 
 	dest: Target pixmap for the draw device. See fz_new_pixmap*

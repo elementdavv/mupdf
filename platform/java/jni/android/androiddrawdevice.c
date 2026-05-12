@@ -221,3 +221,43 @@ FUN(android_AndroidDrawDevice_newNative)(JNIEnv *env, jclass self, jobject jbitm
 
 	return device;
 }
+
+typedef void (fz_fill_text_fn)(fz_context *, fz_device *, const fz_text *, fz_matrix, fz_colorspace *, const float *color, float alpha, fz_color_params );
+
+typedef struct {
+	float color[3];
+	fz_fill_text_fn *orig_fill_text;
+} fz_color_hook_context;
+static fz_color_hook_context h_ctx;
+
+static void
+fz_color_fill_text(fz_context *ctx, fz_device *dev, const fz_text *text, fz_matrix in_ctm,
+		fz_colorspace *colorspace_in, const float *color, float alpha, fz_color_params color_params)
+{
+	h_ctx.orig_fill_text(ctx, dev, text, in_ctm, colorspace_in, h_ctx.color, alpha, color_params);
+}
+
+JNIEXPORT void JNICALL
+FUN(android_AndroidDrawDevice_filterColor)(JNIEnv *env, jobject self, jint foreground, jint background)
+{
+	fz_context *ctx = get_context(env);
+	fz_device *dev = from_Device(env, self);
+	NativeDeviceInfo *info;
+	float color[3];
+	int err = 0;
+
+	info = lockNativeDevice(env,self,&err);
+	if (!err)
+	{
+		color[0] = ((background >> 16) & 0xff) / 255.0f;
+		color[1] = ((background >> 8) & 0xff) / 255.0f;
+		color[2] = (background  & 0xff) / 255.0f;
+		fz_fill_pixmap_with_color(ctx, fz_draw_device_dest(dev), fz_device_rgb(ctx), color, fz_default_color_params);
+		unlockNativeDevice(env,info);
+		h_ctx.color[0] = ((foreground >> 16) & 0xff) / 255.0f;
+		h_ctx.color[1] = ((foreground >> 8) & 0xff) / 255.0f;
+		h_ctx.color[2] = (foreground & 0xff) / 255.0f;
+		h_ctx.orig_fill_text = dev->fill_text;
+		dev->fill_text = fz_color_fill_text;
+	}
+}

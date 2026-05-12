@@ -3377,3 +3377,10 @@ fz_new_draw_device_with_options(fz_context *ctx, const fz_draw_options *opts, fz
 	}
 	return dev;
 }
+
+fz_pixmap *
+fz_draw_device_dest(fz_device *devp)
+{
+	fz_draw_device *dev = (fz_draw_device*)devp;
+	return dev->stack[0].dest;
+}

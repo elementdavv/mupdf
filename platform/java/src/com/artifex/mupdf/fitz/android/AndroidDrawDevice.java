@@ -64,6 +64,18 @@ public final class AndroidDrawDevice extends NativeDevice
 		this(bitmap, 0, 0, true);
 	}
 
+	private native void filterColor(int foreground, int background);
+
+	public AndroidDrawDevice(int foreground, int background, Bitmap bitmap, int xOrigin, int yOrigin, int patchX0, int patchY0, int patchX1, int patchY1) {
+		super(0);
+		pointer = newNative(bitmap, xOrigin, yOrigin, patchX0, patchY0, patchX1, patchY1, false);
+		filterColor(foreground, background);
+	}
+
+	public AndroidDrawDevice(int foreground, int background, Bitmap bitmap, int xOrigin, int yOrigin) {
+		this(foreground, background, bitmap, xOrigin, yOrigin, 0, 0, bitmap.getWidth(), bitmap.getHeight());
+	}
+
 	public static Bitmap drawPage(Page page, Matrix ctm) {
 		RectI ibox = new RectI(page.getBounds().transform(ctm));
 		int w = ibox.x1 - ibox.x0;
