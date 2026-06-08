@@ -37,6 +37,10 @@ extern fz_document_handler office_document_handler;
 extern fz_document_handler gz_document_handler;
 extern fz_document_handler zip_document_handler;
 
+#ifdef HAVE_LIBARCHIVE
+extern fz_document_handler libarchive_document_handler;
+#endif
+
 void fz_register_document_handlers(fz_context *ctx)
 {
 #if FZ_ENABLE_PDF
@@ -67,4 +71,8 @@ void fz_register_document_handlers(fz_context *ctx)
 #endif /* FZ_ENABLE_EPUB */
 	fz_register_document_handler(ctx, &gz_document_handler);
 	fz_register_document_handler(ctx, &zip_document_handler);
+
+#ifdef HAVE_LIBARCHIVE
+	fz_register_document_handler(ctx, &libarchive_document_handler);
+#endif
 }

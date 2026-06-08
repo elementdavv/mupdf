@@ -1,5 +1,9 @@
 # List of source files for all thirdparty libraries.
 
+# --- imported LIBARCHIVE ---
+LIBARCHIVE_SRC := build/intermediates/cmake/buildType/obj
+LIBARCHIVE_CFLAGS += src/main/jni/external/libarchive/libarchive
+
 # --- FREETYPE2 ---
 
 FREETYPE_CFLAGS += -Ithirdparty/freetype/include
