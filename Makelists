@@ -1,6 +1,7 @@
 # List of source files for all thirdparty libraries.
 
 # --- imported LIBARCHIVE ---
+
 LIBARCHIVE_SRC := build/intermediates/cmake/buildType/obj
 LIBARCHIVE_CFLAGS += src/main/jni/external/libarchive/libarchive
 
@@ -793,3 +794,141 @@ EXTRACT_SRC += thirdparty/extract/src/sys.c
 EXTRACT_SRC += thirdparty/extract/src/text.c
 EXTRACT_SRC += thirdparty/extract/src/xml.c
 EXTRACT_SRC += thirdparty/extract/src/zip.c
+
+# --- djvu ---
+
+LIBDJVU_CFLAGS += -Ithirdparty/libdjvu
+LIBDJVU_CFLAGS += -Ithirdparty/libdjvu/libdjvu
+
+LIBDJVU_BUILD_CFLAGS += -std=c++17 -pthread
+LIBDJVU_BUILD_CFLAGS += -DHAVE_PTHREAD=1
+LIBDJVU_BUILD_CFLAGS += -DHAVE_CONFIG_H
+LIBDJVU_BUILD_CFLAGS += -frtti -fexceptions
+
+LIBDJVU_SRC += \
+		thirdparty/libdjvu/libdjvu/Arrays.cpp \
+		thirdparty/libdjvu/libdjvu/atomic.cpp \
+		thirdparty/libdjvu/libdjvu/BSByteStream.cpp \
+		thirdparty/libdjvu/libdjvu/BSEncodeByteStream.cpp \
+		thirdparty/libdjvu/libdjvu/ByteStream.cpp \
+		thirdparty/libdjvu/libdjvu/DataPool.cpp \
+		thirdparty/libdjvu/libdjvu/ddjvuapi.cpp \
+		thirdparty/libdjvu/libdjvu/debug.cpp \
+		thirdparty/libdjvu/libdjvu/DjVmDir0.cpp \
+		thirdparty/libdjvu/libdjvu/DjVmDir.cpp \
+		thirdparty/libdjvu/libdjvu/DjVmDoc.cpp \
+		thirdparty/libdjvu/libdjvu/DjVmNav.cpp \
+		thirdparty/libdjvu/libdjvu/DjVuAnno.cpp \
+		thirdparty/libdjvu/libdjvu/DjVuDocument.cpp \
+		thirdparty/libdjvu/libdjvu/DjVuDumpHelper.cpp \
+		thirdparty/libdjvu/libdjvu/DjVuErrorList.cpp \
+		thirdparty/libdjvu/libdjvu/DjVuFileCache.cpp \
+		thirdparty/libdjvu/libdjvu/DjVuFile.cpp \
+		thirdparty/libdjvu/libdjvu/DjVuGlobal.cpp \
+		thirdparty/libdjvu/libdjvu/DjVuGlobalMemory.cpp \
+		thirdparty/libdjvu/libdjvu/DjVuImage.cpp \
+		thirdparty/libdjvu/libdjvu/DjVuInfo.cpp \
+		thirdparty/libdjvu/libdjvu/DjVuMessage.cpp \
+		thirdparty/libdjvu/libdjvu/DjVuMessageLite.cpp \
+		thirdparty/libdjvu/libdjvu/DjVuNavDir.cpp \
+		thirdparty/libdjvu/libdjvu/DjVuPalette.cpp \
+		thirdparty/libdjvu/libdjvu/DjVuPort.cpp \
+		thirdparty/libdjvu/libdjvu/DjVuText.cpp \
+		thirdparty/libdjvu/libdjvu/DjVuToPS.cpp \
+		thirdparty/libdjvu/libdjvu/GBitmap.cpp \
+		thirdparty/libdjvu/libdjvu/GContainer.cpp \
+		thirdparty/libdjvu/libdjvu/GException.cpp \
+		thirdparty/libdjvu/libdjvu/GIFFManager.cpp \
+		thirdparty/libdjvu/libdjvu/GMapAreas.cpp \
+		thirdparty/libdjvu/libdjvu/GOS.cpp \
+		thirdparty/libdjvu/libdjvu/GPixmap.cpp \
+		thirdparty/libdjvu/libdjvu/GRect.cpp \
+		thirdparty/libdjvu/libdjvu/GScaler.cpp \
+		thirdparty/libdjvu/libdjvu/GSmartPointer.cpp \
+		thirdparty/libdjvu/libdjvu/GString.cpp \
+		thirdparty/libdjvu/libdjvu/GThreads.cpp \
+		thirdparty/libdjvu/libdjvu/GUnicode.cpp \
+		thirdparty/libdjvu/libdjvu/GURL.cpp \
+		thirdparty/libdjvu/libdjvu/IFFByteStream.cpp \
+		thirdparty/libdjvu/libdjvu/IW44EncodeCodec.cpp \
+		thirdparty/libdjvu/libdjvu/IW44Image.cpp \
+		thirdparty/libdjvu/libdjvu/JB2EncodeCodec.cpp \
+		thirdparty/libdjvu/libdjvu/JB2Image.cpp \
+		thirdparty/libdjvu/libdjvu/JPEGDecoder.cpp \
+		thirdparty/libdjvu/libdjvu/miniexp.cpp \
+		thirdparty/libdjvu/libdjvu/MMRDecoder.cpp \
+		thirdparty/libdjvu/libdjvu/MMX.cpp \
+		thirdparty/libdjvu/libdjvu/UnicodeByteStream.cpp \
+		thirdparty/libdjvu/libdjvu/XMLParser.cpp \
+		thirdparty/libdjvu/libdjvu/XMLTags.cpp \
+		thirdparty/libdjvu/libdjvu/ZPCodec.cpp
+
+# --- libtiff ---
+
+LIBTIFF_CFLAGS += -Ithirdparty/libtiff/libtiff
+
+LIBTIFF_SRC += \
+		thirdparty/libtiff/libtiff/tif_aux.c \
+		thirdparty/libtiff/libtiff/tif_close.c \
+		thirdparty/libtiff/libtiff/tif_codec.c \
+		thirdparty/libtiff/libtiff/tif_color.c \
+		thirdparty/libtiff/libtiff/tif_compress.c \
+		thirdparty/libtiff/libtiff/tif_dir.c \
+		thirdparty/libtiff/libtiff/tif_dirinfo.c \
+		thirdparty/libtiff/libtiff/tif_dirread.c \
+		thirdparty/libtiff/libtiff/tif_dirwrite.c \
+		thirdparty/libtiff/libtiff/tif_dumpmode.c \
+		thirdparty/libtiff/libtiff/tif_error.c \
+		thirdparty/libtiff/libtiff/tif_extension.c \
+		thirdparty/libtiff/libtiff/tif_fax3.c \
+		thirdparty/libtiff/libtiff/tif_fax3sm.c \
+		thirdparty/libtiff/libtiff/tif_flush.c \
+		thirdparty/libtiff/libtiff/tif_getimage.c \
+		thirdparty/libtiff/libtiff/tif_hash_set.c \
+		thirdparty/libtiff/libtiff/tif_jbig.c \
+		thirdparty/libtiff/libtiff/tif_jpeg_12.c \
+		thirdparty/libtiff/libtiff/tif_jpeg.c \
+		thirdparty/libtiff/libtiff/tif_lerc.c \
+		thirdparty/libtiff/libtiff/tif_luv.c \
+		thirdparty/libtiff/libtiff/tif_lzma.c \
+		thirdparty/libtiff/libtiff/tif_lzw.c \
+		thirdparty/libtiff/libtiff/tif_next.c \
+		thirdparty/libtiff/libtiff/tif_ojpeg.c \
+		thirdparty/libtiff/libtiff/tif_open.c \
+		thirdparty/libtiff/libtiff/tif_packbits.c \
+		thirdparty/libtiff/libtiff/tif_pixarlog.c \
+		thirdparty/libtiff/libtiff/tif_predict.c \
+		thirdparty/libtiff/libtiff/tif_print.c \
+		thirdparty/libtiff/libtiff/tif_read.c \
+		thirdparty/libtiff/libtiff/tif_strip.c \
+		thirdparty/libtiff/libtiff/tif_swab.c \
+		thirdparty/libtiff/libtiff/tif_thunder.c \
+		thirdparty/libtiff/libtiff/tif_tile.c \
+		thirdparty/libtiff/libtiff/tif_unix.c \
+		thirdparty/libtiff/libtiff/tif_version.c \
+		thirdparty/libtiff/libtiff/tif_warning.c \
+		thirdparty/libtiff/libtiff/tif_webp.c \
+		thirdparty/libtiff/libtiff/tif_write.c \
+		thirdparty/libtiff/libtiff/tif_zip.c \
+		thirdparty/libtiff/libtiff/tif_zstd.c
+
+# --- libiconv ---
+
+LIBICONV_CFLAGS += \
+		-Ithirdparty/libiconv \
+		-Ithirdparty/libiconv/include \
+		-Ithirdparty/libiconv/lib \
+		-Ithirdparty/libiconv/libcharset \
+		-Ithirdparty/libiconv/libcharset/include \
+		-Ithirdparty/libiconv/srclib \
+		-DBUILDING_LIBICONV \
+		-DBUILDING_LIBCHARSET \
+		-DIN_LIBRARY
+
+LIBICONV_EXPORT_C_INCLUDES += -Ithirdparty/libiconv/include
+
+LIBICONV_SRC += \
+		thirdparty/libiconv/lib/iconv.c \
+		thirdparty/libiconv/libcharset/lib/langinfo.c \
+		thirdparty/libiconv/libcharset/lib/localcharset.c \
+		thirdparty/libiconv/libcharset/lib/relocatable-stub.c
