@@ -20,33 +20,11 @@
 // Artifex Software, Inc., 39 Mesa Street, Suite 108A, San Francisco,
 // CA 94129, USA, for further information.
 
-#include "mupdf/fitz.h"
 #include <unistd.h>
-
-#include <android/log.h>
-
-#include "ddjvuapi.h"
-#include "tiffiop.h"
+#include "djvu-archive.h"
 
 extern int try_open_archive;
 static char djvu_cache_path[1024] = {0};
-
-typedef struct
-{
-	int idx;
-	char *name;
-	fz_buffer *ubuf;
-} djvu_entry;
-
-typedef struct
-{
-	fz_archive super;
-
-	int count;
-	djvu_entry *entries;
-	ddjvu_context_t *dctx;
-	ddjvu_document_t *doc;
-} fz_djvu_archive;
 
 void fz_set_djvu_cache_path(const char *path)
 {
@@ -276,6 +254,12 @@ static void ensure_djvu_context(fz_context *ctx, fz_djvu_archive *djvu)
 		fz_drop_buffer(ctx, buf);
 		fz_throw(ctx, FZ_ERROR_GENERIC, "ddjvu_document_decoding_error");
 	}
+	miniexp_t outline;
+
+	while ((outline = ddjvu_document_get_outline(doc)) == miniexp_dummy)
+		handle_ddjvu_messages(dctx, TRUE);
+
+	djvu->outline = outline;
 	djvu->doc = doc;
 	djvu->dctx = dctx;
 	fz_drop_buffer(ctx, buf);
@@ -301,6 +285,7 @@ static void ensure_djvu_entries(fz_context *ctx, fz_djvu_archive *djvu)
 			const char *name = finfo.name ? finfo.name : (finfo.id ? finfo.id : finfo.title);
 			djvu->entries[finfo.pageno].name = fz_strdup(ctx, name);
 			djvu->entries[finfo.pageno].ubuf = 0;
+			djvu->entries[finfo.pageno].hyperlinks = 0;
 		}
 	}
 }
@@ -349,6 +334,18 @@ static void decodeEntry(fz_context *ctx, fz_djvu_archive *djvu, int i)
 		retrive(ctx, tiff, djvu, i);
 		TIFFClose(tiff);
 		unlink(filename);
+		miniexp_t pagetext;
+
+		while ((pagetext = ddjvu_document_get_pagetext(djvu->doc, i, "word")) == miniexp_dummy)
+			handle_ddjvu_messages(djvu->dctx, TRUE);
+
+		djvu->entries[i].pagetext = pagetext;
+		miniexp_t pageanno;
+
+		while ((pageanno = ddjvu_document_get_pageanno(djvu->doc, i)) == miniexp_dummy)
+			handle_ddjvu_messages(djvu->dctx, TRUE);
+
+		djvu->entries[i].hyperlinks = ddjvu_anno_get_hyperlinks(pageanno);
 	}
 }
 
@@ -414,6 +411,9 @@ static void drop_djvu_archive(fz_context *ctx, fz_archive *arch)
 	for (int i = 0; i < djvu->count; ++i) {
 		fz_free(ctx, djvu->entries[i].name);
 		fz_drop_buffer(ctx, djvu->entries[i].ubuf);
+
+		if (djvu->entries[i].hyperlinks)
+			fz_free(ctx, djvu->entries[i].hyperlinks);
 	}
 	fz_free(ctx, djvu->entries);
 	ddjvu_document_release(djvu->doc);
